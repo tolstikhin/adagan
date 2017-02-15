@@ -115,7 +115,6 @@ class Gan(object):
                         operation,
                         feed_dict={placeholder: feed[idx * batch_size:],
                                    placeholder2: feed2})
-
             else:
                 if feed2 is None:
                     res = self._session.run(
@@ -378,21 +377,30 @@ class ImageGan(Gan):
 
         with tf.variable_scope("GENERATOR", reuse=reuse):
 
-            height = output_shape[0]
-            width = output_shape[1]
-            h0 = ops.linear(opts, noise, num_filters * height / 4 * width / 4,
+            height = output_shape[0] / 4
+            width = output_shape[1] / 4
+            h0 = ops.linear(opts, noise, num_filters * height * width,
                             scope='h0_lin')
-            h0 = tf.reshape(h0, [-1, height / 4, width / 4, num_filters])
+            h0 = tf.reshape(h0, [-1, height, width, num_filters])
             h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
             h0 = tf.nn.relu(h0)
-            _out_shape = [dim1, height / 2, width / 2, num_filters / 2]
+            _out_shape = [dim1, height * 2, width * 2, num_filters / 2]
+            # for 28 x 28 does 7 x 7 --> 14 x 14
             h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
             h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
             h1 = tf.nn.relu(h1)
+            _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
+            # for 28 x 28 does 14 x 14 --> 28 x 28 
+            h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
+            h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
+            h2 = tf.nn.relu(h2)
             _out_shape = [dim1] + list(output_shape)
-            h2 = ops.deconv2d(opts, h1, _out_shape, scope='h3_deconv')
+            # data_shape[0] x data_shape[1] x ? -> data_shape
+            h3 = ops.deconv2d(opts, h2, _out_shape,
+                              d_h=1, d_w=1, scope='h3_deconv')
+            h3 = ops.batch_norm(opts, h3, is_training, reuse, scope='bn_layer4')
 
-        return tf.nn.sigmoid(h2)
+        return tf.nn.sigmoid(h3)
 
     def discriminator(self, opts, input_, is_training,
                       prefix='DISCRIMINATOR', reuse=False):
@@ -518,12 +526,13 @@ class ImageGan(Gan):
                             self._d_optim,
                             feed_dict={self._real_points_ph: batch_images,
                                        self._noise_ph: batch_noise,
-                                       self._is_training_ph: 1})
+                                       self._is_training_ph: True})
                     # Update generator parameters
                     for _iter in xrange(opts['g_steps']):
                         _ = self._session.run(
-                            self._g_optim, feed_dict={self._noise_ph: batch_noise,
-                                                      self._is_training_ph: 1})
+                            self._g_optim,
+                            feed_dict={self._noise_ph: batch_noise,
+                            self._is_training_ph: True})
                     counter += 1
 
                     if opts['verbose'] and counter % opts['plot_every'] == 0:
@@ -585,5 +594,5 @@ class ImageGan(Gan):
         res = self._run_batch(
             opts, self._c_training,
             self._real_points_ph, self._data.data,
-            self._is_training_ph, True)
+            self._is_training_ph, False)
         return res

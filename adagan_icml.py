@@ -57,15 +57,19 @@ def main():
     opts["opt_beta1"] = FLAGS.adam_beta1
     opts['batch_norm_eps'] = 1e-05
     opts['batch_norm_decay'] = 0.9
-    opts['d_num_filters'] = 64
+    opts['d_num_filters'] = 4
     opts['g_num_filters'] = 64
-    opts['conv_filters_dim'] = 4
+    opts['conv_filters_dim'] = 3
     opts["early_stop"] = -1 # set -1 to run normally
     opts["plot_every"] = 50 # set -1 to run normally
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+
+    logging.debug('Parameters:')
+    for key in opts:
+        logging.debug('%s : %s' % (key, opts[key]))
 
     data = DataHandler(opts)
     assert data.num_points >= opts['batch_size'], 'Training set too small'
@@ -75,7 +79,7 @@ def main():
     for step in range(opts["adagan_steps_total"]):
         logging.info('Running step {} of AdaGAN'.format(step + 1))
         adagan.make_step(opts, data)
-        num_fake = 50000
+        num_fake = 25600
         logging.debug('Sampling fake points')
         fake_points = adagan.sample_mixture(num_fake)
         logging.debug('Sampling more fake points')
