@@ -117,7 +117,7 @@ class DataHandler(object):
         self.labels = y
         self.num_points = len(X)
 
-        logging.debug('Loading MNIST Done.')
+        logging.debug('Loading Done.')
 
     def _load_mnist3(self, opts):
         """Load data from MNIST files.
@@ -155,18 +155,30 @@ class DataHandler(object):
         y = np.concatenate((tr_Y, te_Y), axis=0)
 
         num = opts['mnist3_dataset_size']
-        X3 = np.zeros((num, 28, 28, 3))
-        y3 = np.zeros(num)
         ids = np.random.choice(len(X), (num, 3), replace=True)
-        for idx, _id in enumerate(ids):
-            X3[idx, :, :, 0] = np.squeeze(X[_id[0]], axis=2)
-            X3[idx, :, :, 1] = np.squeeze(X[_id[1]], axis=2)
-            X3[idx, :, :, 2] = np.squeeze(X[_id[2]], axis=2)
-            y3[idx] = y[_id[0]] * 100 + y[_id[1]] * 10 + y[_id[2]]
+        if opts['mnist3_to_channels']:
+            # Concatenate 3 digits ito 3 channels
+            X3 = np.zeros((num, 28, 28, 3))
+            y3 = np.zeros(num)
+            for idx, _id in enumerate(ids):
+                X3[idx, :, :, 0] = np.squeeze(X[_id[0]], axis=2)
+                X3[idx, :, :, 1] = np.squeeze(X[_id[1]], axis=2)
+                X3[idx, :, :, 2] = np.squeeze(X[_id[2]], axis=2)
+                y3[idx] = y[_id[0]] * 100 + y[_id[1]] * 10 + y[_id[2]]
+            self.data_shape = (28, 28, 3)
+        else:
+            # Concatenate 3 digits in width
+            X3 = np.zeros((num, 28, 3 * 28, 1))
+            y3 = np.zeros(num)
+            for idx, _id in enumerate(ids):
+                X3[idx, :, 0:28, 0] = np.squeeze(X[_id[0]], axis=2)
+                X3[idx, :, 28:56, 0] = np.squeeze(X[_id[1]], axis=2)
+                X3[idx, :, 56:84, 0] = np.squeeze(X[_id[2]], axis=2)
+                y3[idx] = y[_id[0]] * 100 + y[_id[1]] * 10 + y[_id[2]]
+            self.data_shape = (28, 28 * 3, 1)
 
-        self.data_shape = (28, 28, 3)
         self.data = X3/255.
         self.labels = y3
         self.num_points = num
 
-        logging.debug('Loading MNIST Done.')
+        logging.debug('Loading Done.')

@@ -29,9 +29,10 @@ def main():
     opts['gmm_max_val'] = 15.
     opts['toy_dataset_size'] = 10000
     opts['toy_dataset_dim'] = 2
-    opts['mnist3_dataset_size'] = 64 * 1000
-    opts['adagan_steps_total'] = 1
-    opts['samples_per_component'] = 10000
+    opts['mnist3_dataset_size'] = 64 * 2500
+    opts['mnist3_to_channels'] = True
+    opts['adagan_steps_total'] = 5
+    opts['samples_per_component'] = 50000
     opts['work_dir'] = FLAGS.workdir
     opts['is_bagging'] = False
     opts['beta_heur'] = 'constant' # uniform, constant
@@ -50,30 +51,39 @@ def main():
 
     opts['gmm_modes_num'] = 5
     opts['latent_space_dim'] = FLAGS.zdim
-    opts["gan_epoch_num"] = 20
+    opts["gan_epoch_num"] = 10
     opts["mixture_c_epoch_num"] = 1
     opts['opt_learning_rate'] = FLAGS.learning_rate
     opts["opt_beta1"] = FLAGS.adam_beta1
     opts['batch_norm_eps'] = 1e-05
     opts['batch_norm_decay'] = 0.9
+    opts['d_num_filters'] = 64
+    opts['g_num_filters'] = 64
     opts['conv_filters_dim'] = 4
     opts["early_stop"] = -1 # set -1 to run normally
+    opts["plot_every"] = 50 # set -1 to run normally
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
     data = DataHandler(opts)
+    assert data.num_points >= opts['batch_size'], 'Training set too small'
     adagan = AdaGan(opts, data)
     metrics = Metrics()
 
     for step in range(opts["adagan_steps_total"]):
         logging.info('Running step {} of AdaGAN'.format(step + 1))
         adagan.make_step(opts, data)
-        fake_points = adagan.sample_mixture(500)
-        more_fake_points = adagan.sample_mixture(500)
+        num_fake = 50000
+        logging.debug('Sampling fake points')
+        fake_points = adagan.sample_mixture(num_fake)
+        logging.debug('Sampling more fake points')
+        more_fake_points = adagan.sample_mixture(10)
+        logging.debug('Plotting results')
         metrics.make_plots(opts, step, data.data[:500],
-                           fake_points, adagan._data_weights[:500])
+                           fake_points, adagan._data_weights[:10])
+        logging.debug('Evaluating results')
         (likelihood, C) = metrics.evaluate(
             opts, step, data.data[:500],
             fake_points, more_fake_points, prefix='')

@@ -76,6 +76,10 @@ class Metrics(object):
             return self._evaluate_mnist(
                 opts, step, real_points,
                 fake_points, validation_fake_points=None, prefix='')
+        elif opts['dataset'] == 'mnist3':
+            return self._evaluate_mnist3(
+                opts, step, real_points,
+                fake_points, validation_fake_points=None, prefix='')
 
         else:
             logging.debug('Can not evaluate, sorry...')
@@ -130,10 +134,14 @@ class Metrics(object):
 
     def _evaluate_mnist(self, opts, step, real_points,
                         fake_points, validation_fake_points, prefix=''):
-        """ Check that model is producing a uniform distribution over digits.
+        assert False, 'Not implemented yet'
+
+    def _evaluate_mnist3(self, opts, step, real_points,
+                        fake_points, validation_fake_points, prefix=''):
+        """ The model is covering as many modes and as uniformly as possible.
 
         Classify every picture in fake_points with a pre-trained MNIST
-        classifier and compute the resulting distribution over the digits. It
+        classifier and compute the resulting distribution over the modes. It
         should be as close as possible to the uniform. Measure this distance
         with KL divergence.
         """
@@ -161,29 +169,39 @@ class Metrics(object):
                 trained_net = trained_net[0]
 
                 batch_size = opts['tf_run_batch_size']
-                batches_num = num_fake / batch_size
-                if batches_num == 0:
-                    batches_num = 1
+                batches_num = int(np.ceil((num_fake + 0.) / batch_size))
                 result = []
                 for idx in xrange(batches_num):
                     end_idx = min(num_fake, (idx + 1) * batch_size)
-                    _res = sess.run(
+                    batch_fake = fake_points[idx * batch_size:end_idx]
+                    input1, input2, input3 = np.split(batch_fake, 3, axis=3)
+                    _res1 = sess.run(
                         trained_net,
-                        feed_dict={input_ph: fake_points[idx * batch_size:
-                                                         end_idx],
+                        feed_dict={input_ph: input1,
                                    dropout_keep_prob_ph: 1.})
-                    result.append(_res)
+                    _res2 = sess.run(
+                        trained_net,
+                        feed_dict={input_ph: input2,
+                                   dropout_keep_prob_ph: 1.})
+                    _res3 = sess.run(
+                        trained_net,
+                        feed_dict={input_ph: input3,
+                                   dropout_keep_prob_ph: 1.})
+                    result.append(100 * _res1 + 10 * _res2 + _res3)
                 result = np.hstack(result)
                 assert len(result) == num_fake
         digits = result.astype(int)
         # Compute the coverage
-        C = len(np.unique(digits)) / 10.
+        C = len(np.unique(digits)) / 1000.
         # Compute the JS with uniform
-        phat = np.bincount(digits)
+        phat = np.bincount(digits, minlength=1000)
+        logging.debug('Multinomial over %d modes of '
+                      'the current mixture:' % len(phat))
+        to_print = zip(range(len(phat)),phat)
+        to_print = [el for el in to_print if el[1] > 0]
+        logging.debug(to_print)
         phat = phat / np.sum(phat)
-        logging.debug('Per digit multinomial of the current mixture')
-        logging.debug(phat)
-        pu = (phat * .0 + 1.) / num_fake
+        pu = (phat * .0 + 1.) / 1000
         pref = (phat + pu) / 2.
         JS = np.sum(np.log(pu / pref) * pu)
         JS += np.sum(np.log(pref / pu) * pref)
@@ -256,11 +274,20 @@ class Metrics(object):
         pics = []
         for idx in xrange(4):
             if opts['dataset'] == 'mnist3':
-                dig1 = fake_points[idx, :, :, 0]
-                dig2 = fake_points[idx, :, :, 1]
-                dig3 = fake_points[idx, :, :, 2]
-                pics.append(1. - np.concatenate(
-                    [dig1, dig2, dig3], axis=1))
+                if opts['mnist3_to_channels']:
+                    # Digits are stacked in channels
+                    dig1 = fake_points[idx, :, :, 0]
+                    dig2 = fake_points[idx, :, :, 1]
+                    dig3 = fake_points[idx, :, :, 2]
+                    pics.append(1. - np.concatenate(
+                        [dig1, dig2, dig3], axis=1))
+                else:
+                    # Digits are stacked in width
+                    dig1 = fake_points[idx, :, 0:28, :]
+                    dig2 = fake_points[idx, :, 28:56, :]
+                    dig3 = fake_points[idx, :, 56:84, :]
+                    pics.append(1. - np.concatenate(
+                        [dig1, dig2, dig3], axis=1))
             else:
                 pics.append(1. - np.concatenate(
                     fake_points[idx * 4:(idx + 1) * 4, :, :, :], axis=1))

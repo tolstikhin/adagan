@@ -96,15 +96,11 @@ class Gan(object):
         TODO: write util function which will be called both from this method
         and MNIST classification evaluation as well.
 
-        TODO: make sure the vstack works well. if the op returns (N,) then
-        things go wrong.
         """
         assert len(feed.shape) > 0, 'Empry feed.'
         num_points = feed.shape[0]
         batch_size = opts['tf_run_batch_size']
-        batches_num = num_points / batch_size
-        if batches_num == 0:
-            batches_num = 1
+        batches_num = int(np.ceil((num_points + 0.) / batch_size))
         result = []
         # logging.debug('Running op in batches...')
         # with ProgressBar(opts['verbose'], batches_num) as bar:
@@ -378,7 +374,7 @@ class ImageGan(Gan):
         output_shape = self._data.data_shape # (dim1, dim2, dim3)
         # Computing the number of noise vectors on-the-go
         dim1 = tf.shape(noise)[0]
-        num_filters = 128
+        num_filters = opts['g_num_filters']
 
         with tf.variable_scope("GENERATOR", reuse=reuse):
 
@@ -386,7 +382,7 @@ class ImageGan(Gan):
             width = output_shape[1]
             h0 = ops.linear(opts, noise, num_filters * height / 4 * width / 4,
                             scope='h0_lin')
-            h0 = tf.reshape(h0, [-1, width / 4, height / 4, num_filters])
+            h0 = tf.reshape(h0, [-1, height / 4, width / 4, num_filters])
             h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
             h0 = tf.nn.relu(h0)
             _out_shape = [dim1, height / 2, width / 2, num_filters / 2]
@@ -405,7 +401,7 @@ class ImageGan(Gan):
         """
         shape = input_.get_shape().as_list()
         assert len(shape) > 0, 'No inputs to discriminate.'
-        num_filters = 4
+        num_filters = opts['d_num_filters']
 
         with tf.variable_scope(prefix, reuse=reuse):
             h0 = ops.conv2d(opts, input_, num_filters, scope='h0_conv')
@@ -530,7 +526,10 @@ class ImageGan(Gan):
                                                       self._is_training_ph: 1})
                     counter += 1
 
-                    if opts['verbose'] and counter % 50 == 0:
+                    if opts['verbose'] and counter % opts['plot_every'] == 0:
+                        logging.debug(
+                            'Epoch: %d/%d, batch:%d/%d' % \
+                            (_epoch, opts['gan_epoch_num'], _idx, batches_num))
                         metrics = Metrics()
                         points_to_plot = self._run_batch(
                             opts, self._G, self._noise_ph,
