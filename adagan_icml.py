@@ -73,7 +73,7 @@ def main():
     opts['g_num_filters'] = 64
     opts['conv_filters_dim'] = 4
     opts["early_stop"] = -1 # set -1 to run normally
-    opts["plot_every"] = 3 # set -1 to run normally
+    opts["plot_every"] = 50 # set -1 to run normally
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')

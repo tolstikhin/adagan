@@ -630,66 +630,67 @@ class ImageGan(Gan):
 
 class UnrolledGan(ImageGan):
 
-    def generator(self, opts, noise, is_training, reuse=False):
-        """Generator function, suitable for simple picture experiments.
-
-        Args:
-            noise: [num_points, dim] array, where dim is dimensionality of the
-                latent noise space.
-            is_training: bool, defines whether to use batch_norm in the train
-                or test mode.
-        Returns:
-            [num_points, dim1, dim2, dim3] array, where the first coordinate
-            indexes the points, which all are of the shape (dim1, dim2, dim3).
-        """
-
-        output_shape = self._data.data_shape # (dim1, dim2, dim3)
-        # Computing the number of noise vectors on-the-go
-        dim1 = tf.shape(noise)[0]
-        num_filters = opts['g_num_filters']
-
-        with tf.variable_scope("GENERATOR", reuse=reuse):
-
-            height = output_shape[0] / 4
-            width = output_shape[1] / 4
-            h0 = ops.linear(opts, noise, num_filters * height * width,
-                            scope='h0_lin')
-            h0 = tf.reshape(h0, [-1, height, width, num_filters])
-            h0 = tf.nn.relu(h0)
-            _out_shape = [dim1, height * 2, width * 2, num_filters / 2]
-            # for 28 x 28 does 7 x 7 --> 14 x 14
-            h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
-            h1 = tf.nn.relu(h1)
-            _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
-            # for 28 x 28 does 14 x 14 --> 28 x 28 
-            h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
-            h2 = tf.nn.relu(h2)
-            _out_shape = [dim1] + list(output_shape)
-            # data_shape[0] x data_shape[1] x ? -> data_shape
-            h3 = ops.deconv2d(opts, h2, _out_shape,
-                              d_h=1, d_w=1, scope='h3_deconv')
-
-        return tf.nn.sigmoid(h3)
-
-    def discriminator(self, opts, input_, is_training,
-                      prefix='DISCRIMINATOR', reuse=False):
-        """Discriminator function, suitable for simple toy experiments.
-
-        """
-        shape = input_.get_shape().as_list()
-        assert len(shape) > 0, 'No inputs to discriminate.'
-        num_filters = opts['d_num_filters']
-
-        with tf.variable_scope(prefix, reuse=reuse):
-            h0 = ops.conv2d(opts, input_, num_filters, scope='h0_conv')
-            h0 = ops.lrelu(h0)
-            h1 = ops.conv2d(opts, h0, num_filters * 2, scope='h1_conv')
-            h1 = ops.lrelu(h1)
-            h2 = ops.conv2d(opts, h1, num_filters * 4, scope='h2_conv')
-            h2 = ops.lrelu(h2)
-            h3 = ops.linear(opts, h2, 1, scope='h3_lin')
-
-        return h3
+### Generator and Discriminator without batch_norm ####
+#     def generator(self, opts, noise, is_training, reuse=False):
+#         """Generator function, suitable for simple picture experiments.
+# 
+#         Args:
+#             noise: [num_points, dim] array, where dim is dimensionality of the
+#                 latent noise space.
+#             is_training: bool, defines whether to use batch_norm in the train
+#                 or test mode.
+#         Returns:
+#             [num_points, dim1, dim2, dim3] array, where the first coordinate
+#             indexes the points, which all are of the shape (dim1, dim2, dim3).
+#         """
+# 
+#         output_shape = self._data.data_shape # (dim1, dim2, dim3)
+#         # Computing the number of noise vectors on-the-go
+#         dim1 = tf.shape(noise)[0]
+#         num_filters = opts['g_num_filters']
+# 
+#         with tf.variable_scope("GENERATOR", reuse=reuse):
+# 
+#             height = output_shape[0] / 4
+#             width = output_shape[1] / 4
+#             h0 = ops.linear(opts, noise, num_filters * height * width,
+#                             scope='h0_lin')
+#             h0 = tf.reshape(h0, [-1, height, width, num_filters])
+#             h0 = tf.nn.relu(h0)
+#             _out_shape = [dim1, height * 2, width * 2, num_filters / 2]
+#             # for 28 x 28 does 7 x 7 --> 14 x 14
+#             h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
+#             h1 = tf.nn.relu(h1)
+#             _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
+#             # for 28 x 28 does 14 x 14 --> 28 x 28 
+#             h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
+#             h2 = tf.nn.relu(h2)
+#             _out_shape = [dim1] + list(output_shape)
+#             # data_shape[0] x data_shape[1] x ? -> data_shape
+#             h3 = ops.deconv2d(opts, h2, _out_shape,
+#                               d_h=1, d_w=1, scope='h3_deconv')
+# 
+#         return tf.nn.sigmoid(h3)
+# 
+#     def discriminator(self, opts, input_, is_training,
+#                       prefix='DISCRIMINATOR', reuse=False):
+#         """Discriminator function, suitable for simple toy experiments.
+# 
+#         """
+#         shape = input_.get_shape().as_list()
+#         assert len(shape) > 0, 'No inputs to discriminate.'
+#         num_filters = opts['d_num_filters']
+# 
+#         with tf.variable_scope(prefix, reuse=reuse):
+#             h0 = ops.conv2d(opts, input_, num_filters, scope='h0_conv')
+#             h0 = ops.lrelu(h0)
+#             h1 = ops.conv2d(opts, h0, num_filters * 2, scope='h1_conv')
+#             h1 = ops.lrelu(h1)
+#             h2 = ops.conv2d(opts, h1, num_filters * 4, scope='h2_conv')
+#             h2 = ops.lrelu(h2)
+#             h3 = ops.linear(opts, h2, 1, scope='h3_lin')
+# 
+#         return h3
 
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to GAN implementation.
@@ -710,7 +711,8 @@ class UnrolledGan(ImageGan):
             tf.float32, [None] + list(data_shape), name='fake_points')
         noise_ph = tf.placeholder(
             tf.float32, [None] + [opts['latent_space_dim']], name='noise')
-        is_training_ph = tf.placeholder(tf.bool, name='is_train')
+        # is_training_ph = tf.placeholder(tf.bool, name='is_train')
+        is_training_ph = True
 
 
         # Operations
@@ -841,15 +843,13 @@ class UnrolledGan(ImageGan):
                         _ = self._session.run(
                             self._d_optim,
                             feed_dict={self._real_points_ph: batch_images,
-                                       self._noise_ph: batch_noise,
-                                       self._is_training_ph: True})
+                                       self._noise_ph: batch_noise}) # add is_training placeh.
                     # Update generator parameters
                     for _iter in xrange(opts['g_steps']):
                         _ = self._session.run(
                             self._g_optim,
                             feed_dict={self._real_points_ph: batch_images,
-                            self._noise_ph: batch_noise,
-                            self._is_training_ph: True})
+                            self._noise_ph: batch_noise}) # add is_training placeh.
                     counter += 1
 
                     if opts['verbose'] and counter % opts['plot_every'] == 0:
@@ -859,8 +859,8 @@ class UnrolledGan(ImageGan):
                         metrics = Metrics()
                         points_to_plot = self._run_batch(
                             opts, self._G, self._noise_ph,
-                            self._noise_for_plots[0:16],
-                            self._is_training_ph, False)
+                            self._noise_for_plots[0:16])
+                            # add is_training placeh.
                         metrics.make_plots(
                             opts,
                             counter,
@@ -870,4 +870,46 @@ class UnrolledGan(ImageGan):
                     if opts['early_stop'] > 0 and counter > opts['early_stop']:
                         break
                 pbar.bam()
+
+## SUPPRESS THIS PART ONCE is_training becomes a placeholder ####
+    def _sample_internal(self, opts, num):
+        """Sample from the trained GAN model.
+
+        """
+        noise = utils.generate_noise(opts, num)
+        sample = self._run_batch(
+            opts, self._G, self._noise_ph, noise)
+        #     self._is_training_ph, False)
+        # sample = self._session.run(
+        #     self._G, feed_dict={self._noise_ph: noise})
+        return sample
+
+    def _train_mixture_discriminator_internal(self, opts, fake_images):
+        """Train a classifier separating true data from points in fake_images.
+
+        """
+
+        batches_num = self._data.num_points / opts['batch_size']
+        logging.debug('Training a mixture discriminator')
+        with ProgressBar(opts['verbose'], opts['mixture_c_epoch_num']) as pbar:
+            for epoch in xrange(opts["mixture_c_epoch_num"]):
+                for idx in xrange(batches_num):
+                    ids = np.random.choice(len(fake_images), opts['batch_size'],
+                                           replace=False)
+                    batch_fake_images = fake_images[ids]
+                    ids = np.random.choice(self._data.num_points, opts['batch_size'],
+                                           replace=False)
+                    batch_real_images = self._data.data[ids]
+                    _ = self._session.run(
+                        self._c_optim,
+                        feed_dict={self._real_points_ph: batch_real_images,
+                                   self._fake_points_ph: batch_fake_images})
+                                   # self._is_training_ph: True})
+                pbar.bam()
+
+        res = self._run_batch(
+            opts, self._c_training,
+            self._real_points_ph, self._data.data,
+            self._is_training_ph, False)
+        return res
 
