@@ -246,8 +246,8 @@ class ToyGan(Gan):
         t_vars = tf.trainable_variables()
         d_vars = [var for var in t_vars if 'DISCRIMINATOR/' in var.name]
         g_vars = [var for var in t_vars if 'GENERATOR/' in var.name]
-        d_optim = ops.optimizer(opts).minimize(d_loss, var_list=d_vars)
-        g_optim = ops.optimizer(opts).minimize(g_loss, var_list=g_vars)
+        d_optim = ops.optimizer(opts, 'd').minimize(d_loss, var_list=d_vars)
+        g_optim = ops.optimizer(opts, 'g').minimize(g_loss, var_list=g_vars)
         c_vars = [var for var in t_vars if 'CLASSIFIER/' in var.name]
         c_optim = ops.optimizer(opts).minimize(c_loss, var_list=c_vars)
 
@@ -489,8 +489,8 @@ class ImageGan(Gan):
         t_vars = tf.trainable_variables()
         d_vars = [var for var in t_vars if 'DISCRIMINATOR/' in var.name]
         g_vars = [var for var in t_vars if 'GENERATOR/' in var.name]
-        d_optim = ops.optimizer(opts).minimize(d_loss, var_list=d_vars)
-        g_optim = ops.optimizer(opts).minimize(g_loss, var_list=g_vars)
+        d_optim = ops.optimizer(opts, 'd').minimize(d_loss, var_list=d_vars)
+        g_optim = ops.optimizer(opts, 'g').minimize(g_loss, var_list=g_vars)
         c_vars = [var for var in t_vars if 'CLASSIFIER/' in var.name]
         c_optim = ops.optimizer(opts).minimize(c_loss, var_list=c_vars)
 

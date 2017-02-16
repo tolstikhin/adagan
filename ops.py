@@ -108,14 +108,23 @@ def deconv2d(opts, input_, output_shape, d_h=2, d_w=2, scope=None):
 
     return deconv
 
-def optimizer(opts):
+def optimizer(opts, net=None):
     """Choose a suitable optimizer.
 
     """
+    if net is not None:
+        if net == 'g':
+            learning_rate = opts['opt_g_learning_rate']
+        elif net == 'd':
+            learning_rate = opts['opt_d_learning_rate']
+        else:
+            assert False, 'Optimizer supports only d, g, or None modes.'
+    else:
+        learning_rate = opts['opt_learning_rate']
+
     if opts["optimizer"] == "sgd":
-        return tf.train.GradientDescentOptimizer(opts["opt_learning_rate"])
+        return tf.train.GradientDescentOptimizer(learning_rate)
     elif opts["optimizer"] == "adam":
-        return tf.train.AdamOptimizer(
-            opts["opt_learning_rate"], beta1=opts["opt_beta1"])
+        return tf.train.AdamOptimizer(learning_rate, beta1=opts["opt_beta1"])
     else:
         assert False, 'Unknown optimizer.'
