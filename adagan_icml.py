@@ -4,12 +4,14 @@ Refer to the arXiv paper 'AdaGAN: Boosting Generative Models'
 Coded by Ilya Tolstikhin, Carl-Johann Simon-Gabriel
 """
 
+import os
 import argparse
 import logging
 import tensorflow as tf
 from datahandler import DataHandler
 from adagan import AdaGan
 from metrics import Metrics
+import utils
 
 flags = tf.app.flags
 flags.DEFINE_float("g_learning_rate", 0.0008,
@@ -69,15 +71,17 @@ def main():
     opts['g_num_filters'] = 64
     opts['conv_filters_dim'] = 4
     opts["early_stop"] = -1 # set -1 to run normally
-    opts["plot_every"] = 50 # set -1 to run normally
+    opts["plot_every"] = 3 # set -1 to run normally
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
-    logging.debug('Parameters:')
-    for key in opts:
-        logging.debug('%s : %s' % (key, opts[key]))
+    utils.create_dir(opts['work_dir'])
+    with open(os.path.join(opts['work_dir'], 'params.txt'), 'w') as text:
+        text.write('Parameters:\n')
+        for key in opts:
+            text.write('%s : %s\n' % (key, opts[key]))
 
     data = DataHandler(opts)
     assert data.num_points >= opts['batch_size'], 'Training set too small'

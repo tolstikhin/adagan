@@ -154,7 +154,7 @@ class Metrics(object):
         # There may be many points, so we will sess.run
         # in small chunks.
 
-        if opts['inputs_normalize_sym']:
+        if opts['input_normalize_sym']:
             # Rescaling data back to [0, 1.]
             real_points = real_points / 2. + 0.5
             fake_points = fake_points / 2. + 0.5
@@ -205,7 +205,7 @@ class Metrics(object):
         # Compute the JS with uniform
         phat = np.bincount(digits, minlength=1000)
         # logging.debug('Multinomial over %d modes of '
-                      'the current mixture:' % len(phat))
+        #               'the current mixture:' % len(phat))
         # to_print = zip(range(len(phat)),phat)
         # to_print = [el for el in to_print if el[1] > 0]
         logging.debug(to_print)
@@ -282,8 +282,9 @@ class Metrics(object):
                          fake_points, weights, prefix):
         pics = []
         if opts['dataset'] == 'mnist' or opts['dataset'] == 'mnist3':
-            if opts['inputs_normalize_sym']:
-                real_points = real_points / 2. + 0.5
+            if opts['input_normalize_sym']:
+                if real_points is not None:
+                    real_points = real_points / 2. + 0.5
                 fake_points = fake_points / 2. + 0.5
         for idx in xrange(4):
             if opts['dataset'] == 'mnist3':
