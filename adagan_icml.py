@@ -12,7 +12,8 @@ from adagan import AdaGan
 from metrics import Metrics
 
 flags = tf.app.flags
-flags.DEFINE_float("learning_rate", 0.0008, "Learning rate for optimizers [8e-4]")
+flags.DEFINE_float("g_learning_rate", 0.0008, "Learning rate for optimizers [8e-4]")
+flags.DEFINE_float("d_learning_rate", 0.0008, "Learning rate for optimizers [8e-4]")
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
 flags.DEFINE_integer("zdim", 256, "Dimensionality of the latent space [100]")
 flags.DEFINE_float("init_std", 0.02, "Initial variance for weights [0.02]")
@@ -30,7 +31,8 @@ def main():
     opts['toy_dataset_size'] = 10000
     opts['toy_dataset_dim'] = 2
     opts['mnist3_dataset_size'] = 64 * 2500
-    opts['mnist3_to_channels'] = True
+    opts['mnist3_to_channels'] = True # Hide 3 digits of MNIST to channels
+    opts['input_normalize_sym'] = True # Normalize data to [-1, 1]
     opts['adagan_steps_total'] = 5
     opts['samples_per_component'] = 50000
     opts['work_dir'] = FLAGS.workdir

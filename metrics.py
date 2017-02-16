@@ -150,8 +150,17 @@ class Metrics(object):
         num_fake = len(fake_points)
 
         # Classifying points with pre-trained model.
+        # Pre-trained classifier assumes inputs are in [0, 1.]
         # There may be many points, so we will sess.run
         # in small chunks.
+
+        if opts['inputs_normalize_sym']:
+            # Rescaling data back to [0, 1.]
+            real_points = real_points / 2. + 0.5
+            fake_points = fake_points / 2. + 0.5
+            if validation_fake_points  is not None:
+                validation_fake_points = validation_fake_points / 2. + 0.5
+
         with tf.Graph().as_default() as g:
             model_file = os.path.join(opts['trained_model_path'],
                                       opts['mnist_trained_model_file'])
@@ -272,6 +281,10 @@ class Metrics(object):
     def _make_plots_pics(self, opts, step, real_points,
                          fake_points, weights, prefix):
         pics = []
+        if opts['dataset'] == 'mnist' or opts['dataset'] == 'mnist3':
+            if opts['inputs_normalize_sym']:
+                real_points = real_points / 2. + 0.5
+                fake_points = fake_points / 2. + 0.5
         for idx in xrange(4):
             if opts['dataset'] == 'mnist3':
                 if opts['mnist3_to_channels']:

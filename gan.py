@@ -383,24 +383,30 @@ class ImageGan(Gan):
                             scope='h0_lin')
             h0 = tf.reshape(h0, [-1, height, width, num_filters])
             h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
-            h0 = tf.nn.relu(h0)
+            # h0 = tf.nn.relu(h0)
+            h0 = ops.lrelu(h0)
             _out_shape = [dim1, height * 2, width * 2, num_filters / 2]
             # for 28 x 28 does 7 x 7 --> 14 x 14
             h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
             h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
-            h1 = tf.nn.relu(h1)
+            # h1 = tf.nn.relu(h1)
+            h1 = ops.lrelu(h1)
             _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
             # for 28 x 28 does 14 x 14 --> 28 x 28 
             h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
             h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
-            h2 = tf.nn.relu(h2)
+            # h2 = tf.nn.relu(h2)
+            h2 = ops.lrelu(h2)
             _out_shape = [dim1] + list(output_shape)
             # data_shape[0] x data_shape[1] x ? -> data_shape
             h3 = ops.deconv2d(opts, h2, _out_shape,
                               d_h=1, d_w=1, scope='h3_deconv')
             h3 = ops.batch_norm(opts, h3, is_training, reuse, scope='bn_layer4')
 
-        return tf.nn.sigmoid(h3)
+        if opts['input_normalize_sym']:
+            return tf.nn.tanh(h3)
+        else:
+            return tf.nn.sigmoid(h3)
 
     def discriminator(self, opts, input_, is_training,
                       prefix='DISCRIMINATOR', reuse=False):
