@@ -195,12 +195,12 @@ class Metrics(object):
         C = len(np.unique(digits)) / 1000.
         # Compute the JS with uniform
         phat = np.bincount(digits, minlength=1000)
-        logging.debug('Multinomial over %d modes of '
+        # logging.debug('Multinomial over %d modes of '
                       'the current mixture:' % len(phat))
-        to_print = zip(range(len(phat)),phat)
-        to_print = [el for el in to_print if el[1] > 0]
+        # to_print = zip(range(len(phat)),phat)
+        # to_print = [el for el in to_print if el[1] > 0]
         logging.debug(to_print)
-        phat = phat / np.sum(phat)
+        phat = (phat + 0.0) / np.sum(phat)
         pu = (phat * .0 + 1.) / 1000
         pref = (phat + pu) / 2.
         JS = np.sum(np.log(pu / pref) * pu)
