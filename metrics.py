@@ -156,7 +156,8 @@ class Metrics(object):
 
         if opts['input_normalize_sym']:
             # Rescaling data back to [0, 1.]
-            real_points = real_points / 2. + 0.5
+            if real_points is not None:
+                real_points = real_points / 2. + 0.5
             fake_points = fake_points / 2. + 0.5
             if validation_fake_points  is not None:
                 validation_fake_points = validation_fake_points / 2. + 0.5
@@ -169,46 +170,79 @@ class Metrics(object):
                 saver.restore(sess, model_file)
                 input_ph = tf.get_collection('X_')
                 assert len(input_ph) > 0, 'Failed to load pre-trained model'
+                # Input placeholder
                 input_ph = input_ph[0]
                 dropout_keep_prob_ph = tf.get_collection('keep_prob')
                 assert len(dropout_keep_prob_ph) > 0, 'Failed to load pre-trained model'
                 dropout_keep_prob_ph = dropout_keep_prob_ph[0]
                 trained_net = tf.get_collection('prediction')
                 assert len(trained_net) > 0, 'Failed to load pre-trained model'
+                # Predicted digit
                 trained_net = trained_net[0]
+                logits = tf.get_collection('y_hat')
+                assert len(logits) > 0, 'Failed to load pre-trained model'
+                # Resulting 10 logits
+                logits = logits[0]
+                prob_max = tf.reduce_max(tf.nn.softmax(logits),
+                                         reduction_indices=[1])
 
                 batch_size = opts['tf_run_batch_size']
                 batches_num = int(np.ceil((num_fake + 0.) / batch_size))
                 result = []
+                result_probs = []
                 for idx in xrange(batches_num):
                     end_idx = min(num_fake, (idx + 1) * batch_size)
                     batch_fake = fake_points[idx * batch_size:end_idx]
                     input1, input2, input3 = np.split(batch_fake, 3, axis=3)
-                    _res1 = sess.run(
-                        trained_net,
+                    _res1, prob1 = sess.run(
+                        [trained_net, prob_max],
                         feed_dict={input_ph: input1,
                                    dropout_keep_prob_ph: 1.})
-                    _res2 = sess.run(
-                        trained_net,
+                    _res2, prob2 = sess.run(
+                        [trained_net, prob_max],
                         feed_dict={input_ph: input2,
                                    dropout_keep_prob_ph: 1.})
-                    _res3 = sess.run(
-                        trained_net,
+                    _res3, prob3 = sess.run(
+                        [trained_net, prob_max],
                         feed_dict={input_ph: input3,
                                    dropout_keep_prob_ph: 1.})
                     result.append(100 * _res1 + 10 * _res2 + _res3)
+                    result_probs.append((prob1 + prob2 + prob3) / 3.)
                 result = np.hstack(result)
+                result_probs = np.hstack(result_probs)
                 assert len(result) == num_fake
+                assert len(result_probs) == num_fake
+
+        # Normalizing back
+        if opts['input_normalize_sym']:
+            # Rescaling data back to [0, 1.]
+            if real_points is not None:
+                real_points = 2. * (real_points - 0.5)
+            fake_points = 2. * (fake_points - 0.5)
+            if validation_fake_points  is not None:
+                validation_fake_points = 2. * (validation_fake_points - 0.5)
+
         digits = result.astype(int)
+        # Plot one fake image per detected mode
+        gathered = []
+        for (idx, dig) in enumerate(list(digits)):
+            if not dig in gathered:
+                gathered.append(dig)
+                point = fake_points[idx]
+                self._make_plots_pics(
+                    opts, step, None, np.array(4 * [point]),
+                    None, 'mode%04dprob%.4f' % (dig, result_probs[idx]))
         # Compute the coverage
         C = len(np.unique(digits)) / 1000.
+        # Confidence of made predictions
+        conf = np.mean(result_probs)
         # Compute the JS with uniform
         phat = np.bincount(digits, minlength=1000)
         # logging.debug('Multinomial over %d modes of '
         #               'the current mixture:' % len(phat))
         # to_print = zip(range(len(phat)),phat)
         # to_print = [el for el in to_print if el[1] > 0]
-        logging.debug(to_print)
+        # logging.debug(to_print)
         phat = (phat + 0.0) / np.sum(phat)
         pu = (phat * .0 + 1.) / 1000
         pref = (phat + pu) / 2.
@@ -216,7 +250,8 @@ class Metrics(object):
         JS += np.sum(np.log(pref / pu) * pref)
         JS = JS / 2.
 
-        logging.info('Evaluating: JS=%.3f, C=%.3f' % (JS, C))
+        logging.info(
+            'Evaluating: JS=%.3f, C=%.3f, Confidence=%.4f' % (JS, C, conf))
         return (JS, C)
 
     def _make_plots_2d(self, opts, step, real_points,

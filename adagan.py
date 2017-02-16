@@ -111,7 +111,11 @@ class AdaGan(object):
                 sample.append(
                     comp_samples[np.random.randint(len(comp_samples))])
 
-        return np.array(sample)
+        # Finally we shuffle
+        res = np.array(sample)
+        np.random.shuffle(res)
+
+        return res
 
 
     def _next_mixture_weight(self, opts):
@@ -122,7 +126,7 @@ class AdaGan(object):
             return 1.
         else:
             if self._beta_heur == 'uniform' or opts['is_bagging']:
-                # This weighting sheme will correspond to the uniform mixture
+                # This weighting scheme will correspond to the uniform mixture
                 # of the resulting component generators. Thus this scheme can
                 # be also used for bagging.
                 return 1./(self.steps_made + 1.)
