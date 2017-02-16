@@ -23,6 +23,8 @@ def main():
     opts = {}
     opts['random_seed'] = 66
     opts['dataset'] = 'mnist3' # gmm, mnist, mnist3 ...
+    opts['unrolled'] = True # Use Unrolled GAN? (only for images)
+    opts['unrolling_steps'] = 2 # Used only if unrolled = True
     opts['data_dir'] = 'mnist'
     opts['trained_model_path'] = 'models'
     opts['mnist_trained_model_file'] = 'mnist_trainSteps_20000'
@@ -45,7 +47,7 @@ def main():
     opts['optimizer'] = 'adam' # sgd, adam
     opts["batch_size"] = 64
     opts["d_steps"] = 1
-    opts["g_steps"] = 2
+    opts["g_steps"] = 1 # 2
     opts["verbose"] = True
     opts['tf_run_batch_size'] = 100
 
