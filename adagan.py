@@ -53,7 +53,10 @@ class AdaGan(object):
         if opts['dataset'] == 'gmm':
             gan_class = GAN.ToyGan
         elif opts['dataset'] in ('mnist', 'mnist3'):
-            gan_class = GAN.ImageGan
+            if opts['unrolled']:
+                gan_class = GAN.UnrolledGan
+            else:
+                gan_class = GAN.ImageGan
         else:
             assert False, "We don't have any other GAN implementations yet..."
 

@@ -30,6 +30,8 @@ def main():
     opts = {}
     opts['random_seed'] = 66
     opts['dataset'] = 'mnist3' # gmm, mnist, mnist3 ...
+    opts['unrolled'] = True # Use Unrolled GAN? (only for images)
+    opts['unrolling_steps'] = 2 # Used only if unrolled = True
     opts['data_dir'] = 'mnist'
     opts['trained_model_path'] = 'models'
     opts['mnist_trained_model_file'] = 'mnist_trainSteps_19999_yhat' # 'mnist_trainSteps_20000'
