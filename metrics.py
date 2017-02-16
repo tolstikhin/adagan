@@ -150,8 +150,17 @@ class Metrics(object):
         num_fake = len(fake_points)
 
         # Classifying points with pre-trained model.
+        # Pre-trained classifier assumes inputs are in [0, 1.]
         # There may be many points, so we will sess.run
         # in small chunks.
+
+        if opts['input_normalize_sym']:
+            # Rescaling data back to [0, 1.]
+            real_points = real_points / 2. + 0.5
+            fake_points = fake_points / 2. + 0.5
+            if validation_fake_points  is not None:
+                validation_fake_points = validation_fake_points / 2. + 0.5
+
         with tf.Graph().as_default() as g:
             model_file = os.path.join(opts['trained_model_path'],
                                       opts['mnist_trained_model_file'])
@@ -195,12 +204,12 @@ class Metrics(object):
         C = len(np.unique(digits)) / 1000.
         # Compute the JS with uniform
         phat = np.bincount(digits, minlength=1000)
-        logging.debug('Multinomial over %d modes of '
-                      'the current mixture:' % len(phat))
-        to_print = zip(range(len(phat)),phat)
-        to_print = [el for el in to_print if el[1] > 0]
+        # logging.debug('Multinomial over %d modes of '
+        #               'the current mixture:' % len(phat))
+        # to_print = zip(range(len(phat)),phat)
+        # to_print = [el for el in to_print if el[1] > 0]
         logging.debug(to_print)
-        phat = phat / np.sum(phat)
+        phat = (phat + 0.0) / np.sum(phat)
         pu = (phat * .0 + 1.) / 1000
         pref = (phat + pu) / 2.
         JS = np.sum(np.log(pu / pref) * pu)
@@ -272,6 +281,11 @@ class Metrics(object):
     def _make_plots_pics(self, opts, step, real_points,
                          fake_points, weights, prefix):
         pics = []
+        if opts['dataset'] == 'mnist' or opts['dataset'] == 'mnist3':
+            if opts['input_normalize_sym']:
+                if real_points is not None:
+                    real_points = real_points / 2. + 0.5
+                fake_points = fake_points / 2. + 0.5
         for idx in xrange(4):
             if opts['dataset'] == 'mnist3':
                 if opts['mnist3_to_channels']:

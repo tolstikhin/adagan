@@ -32,6 +32,11 @@ class DataHandler(object):
         if opts['dataset'] == 'gmm':
             self._load_gmm(opts)
 
+        if opts['input_normalize_sym'] and  \
+                (opts['dataset'] == 'mnist' or opts['dataset'] == 'mnist3'):
+            # Normalize data to [-1, 1]
+            self.data = (self.data - 0.5) * 2.
+
     def _load_gmm(self, opts):
         """Sample data from the mixture of Gaussians.
 
