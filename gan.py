@@ -83,6 +83,14 @@ class Gan(object):
     def train_mixture_discriminator(self, opts, fake_images):
         """Train classifier separating true data from points in fake_images.
 
+        Return:
+            prob_real: probabilities of the points from training data being the
+                real points according to the trained mixture classifier.
+                Numpy vector of shape (self._data.num_points,)
+            prob_fake: probabilities of the points from fake_images being the
+                real points according to the trained mixture classifier.
+                Numpy vector of shape (len(fake_images),)
+
         """
         with self._session.as_default(), self._session.graph.as_default():
             return self._train_mixture_discriminator_internal(opts, fake_images)
@@ -347,7 +355,7 @@ class ToyGan(Gan):
         res = self._run_batch(
             opts, self._c_training,
             self._real_points_ph, self._data.data)
-        return res
+        return res, None
 
 class ImageGan(Gan):
     """A simple GAN implementation, suitable for pictures.
@@ -606,6 +614,8 @@ class ImageGan(Gan):
 
         batches_num = self._data.num_points / opts['batch_size']
         logging.debug('Training a mixture discriminator')
+        logging.debug('Using %d real points and %d fake ones' %\
+                      (self._data.num_points, len(fake_images)))
         with ProgressBar(opts['verbose'], opts['mixture_c_epoch_num']) as pbar:
             for epoch in xrange(opts["mixture_c_epoch_num"]):
                 for idx in xrange(batches_num):
@@ -622,11 +632,18 @@ class ImageGan(Gan):
                                    self._is_training_ph: True})
                 pbar.bam()
 
+        # Evaluating trained classifier on real points
         res = self._run_batch(
             opts, self._c_training,
             self._real_points_ph, self._data.data,
             self._is_training_ph, False)
-        return res
+
+        # Evaluating trained classifier on fake points
+        res_fake = self._run_batch(
+            opts, self._c_training,
+            self._real_points_ph, fake_images,
+            self._is_training_ph, False)
+        return res, res_fake
 
 class UnrolledGan(ImageGan):
 
@@ -911,5 +928,5 @@ class UnrolledGan(ImageGan):
             opts, self._c_training,
             self._real_points_ph, self._data.data,
             self._is_training_ph, False)
-        return res
+        return res, None
 

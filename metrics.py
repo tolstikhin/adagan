@@ -193,7 +193,10 @@ class Metrics(object):
                 for idx in xrange(batches_num):
                     end_idx = min(num_fake, (idx + 1) * batch_size)
                     batch_fake = fake_points[idx * batch_size:end_idx]
-                    input1, input2, input3 = np.split(batch_fake, 3, axis=3)
+                    if opts['mnist3_to_channels']:
+                        input1, input2, input3 = np.split(batch_fake, 3, axis=3)
+                    else:
+                        input1, input2, input3 = np.split(batch_fake, 3, axis=2)
                     _res1, prob1 = sess.run(
                         [trained_net, prob_max],
                         feed_dict={input_ph: input1,
@@ -207,7 +210,8 @@ class Metrics(object):
                         feed_dict={input_ph: input3,
                                    dropout_keep_prob_ph: 1.})
                     result.append(100 * _res1 + 10 * _res2 + _res3)
-                    result_probs.append((prob1 + prob2 + prob3) / 3.)
+                    result_probs.append(
+                        np.minimum(np.minimum(prob1, prob2), prob3))
                 result = np.hstack(result)
                 result_probs = np.hstack(result_probs)
                 assert len(result) == num_fake
@@ -230,7 +234,7 @@ class Metrics(object):
                 gathered.append(dig)
                 point = fake_points[idx]
                 self._make_plots_pics(
-                    opts, step, None, np.array(4 * [point]),
+                    opts, step, None, np.array([point]),
                     None, 'mode%04dprob%.4f' % (dig, result_probs[idx]))
         # Compute the coverage
         C = len(np.unique(digits)) / 1000.
@@ -321,7 +325,9 @@ class Metrics(object):
                 if real_points is not None:
                     real_points = real_points / 2. + 0.5
                 fake_points = fake_points / 2. + 0.5
-        for idx in xrange(4):
+        num_pics = len(fake_points)
+        assert num_pics > 0, 'No points to plot'
+        for idx in xrange(num_pics):
             if opts['dataset'] == 'mnist3':
                 if opts['mnist3_to_channels']:
                     # Digits are stacked in channels
@@ -342,7 +348,6 @@ class Metrics(object):
                     fake_points[idx * 4:(idx + 1) * 4, :, :, :], axis=1))
         image = np.concatenate(pics, axis=0)
         plt.clf()
-        assert len(fake_points) > 0, 'No points to plot'
         if fake_points[0].shape[-1] == 1:
             image = image[:, :, 0]
             plt.imshow(image, cmap='Greys')
