@@ -24,8 +24,8 @@ flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]"
 flags.DEFINE_integer("zdim", 50, "Dimensionality of the latent space [100]")
 flags.DEFINE_float("init_std", 0.02, "Initial variance for weights [0.02]")
 flags.DEFINE_string("workdir", 'results', "Working directory ['results']")
-flags.DEFINE_string("use_std_params", True, "Use standard params for this dataset [True]")
-flags.DEFINE_string("unrolled", True, "Use unrolled GAN training [True]")
+flags.DEFINE_bool("use_std_params", True, "Use standard params for this dataset [True]")
+flags.DEFINE_bool("unrolled", True, "Use unrolled GAN training [True]")
 flags.DEFINE_bool("is_bagging", False, "Do we want to use bagging instead of adagan? [False]")
 FLAGS = flags.FLAGS
 
@@ -90,7 +90,7 @@ def main():
             opts['g_num_filters'] = 128
             opts["init_std"] = .2
             opts["batch_size"] = 512
-            opts['toy_dataset_size'] = 512 * 1000
+            opts['toy_dataset_size'] = 512 * 10 # 00
             opts['toy_dataset_dim'] = 2
             opts['unrolling_steps'] = 5 # Used only if unrolled = True
             opts['gmm_modes_num'] = 8
