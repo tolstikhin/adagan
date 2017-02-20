@@ -143,8 +143,13 @@ def debug_updated_weights(opts, steps, weights, data):
     """ Various debug plots for updated weights of training points.
 
     """
+    assert len(data) == len(weights), 'Length mismatch'
     ws_and_ids = sorted(zip(weights,
                         range(len(weights))))
+    plt.figure()
+    ax1 = plt.subplot(211)
+    ax1.set_title('Weights over data points')
+    plt.scatter(range(len(weights)), weights, s=30)
     num_plot = 4 * 16
     if num_plot > len(weights):
         return
@@ -166,8 +171,8 @@ def debug_updated_weights(opts, steps, weights, data):
         for _id, y in enumerate(all_labels):
             w_per_label[_id] = np.sum(
                     weights[np.where(data.labels == y)[0]])
-        plt.figure(figsize=(12,6))
-        plt.clf()
+        ax2 = plt.subplot(212)
+        ax2.set_title('Weights over labels')
         plt.scatter(range(len(all_labels)), w_per_label, s=30)
         filename = 'data_w{:02d}.png'.format(steps)
         create_dir(opts['work_dir'])
