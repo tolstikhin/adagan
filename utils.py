@@ -7,6 +7,10 @@ import sys
 import copy
 import numpy as np
 import logging
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from metrics import Metrics
 from tqdm import tqdm
 
 def generate_noise(opts, num=100):
@@ -87,3 +91,89 @@ def TQDM(opts, *args, **kwargs):
 def create_dir(d):
     if not os.path.exists(d):
         os.makedirs(d)
+
+def js_div_uniform(p, num_cat=1000):
+    """ Computes the JS-divergence between p and the uniform distribution.
+
+    """
+    phat = np.bincount(p, minlength=num_cat)
+    phat = (phat + 0.0) / np.sum(phat)
+    pu = (phat * .0 + 1.) / num_cat
+    pref = (phat + pu) / 2.
+    JS = np.sum(np.log(pu / pref) * pu)
+    JS += np.sum(np.log(pref / pu) * pref)
+    JS = JS / 2.
+
+    return JS
+
+def debug_mixture_classifier(opts, step, probs, points, num_plot=64, real=True):
+    """Small debugger for the mixture classifier's output.
+
+    """
+    num = len(points)
+    if len(probs) != num:
+        return
+    if num < 2 * num_plot:
+        return
+    sorted_vals_and_ids = sorted(zip(probs, range(num)))
+    if real:
+        correct = sorted_vals_and_ids[-num_plot:]
+        wrong = sorted_vals_and_ids[:num_plot]
+    else:
+        correct = sorted_vals_and_ids[:num_plot]
+        wrong = sorted_vals_and_ids[-num_plot:]
+    correct_ids = [_id for val, _id in correct]
+    wrong_ids = [_id for val, _id in wrong]
+    idstring = 'real' if real else 'fake'
+    logging.debug('Correctly classified %s points probs:' %\
+                  idstring)
+    logging.debug([val[0] for val, _id in correct])
+    logging.debug('Incorrectly classified %s points probs:' %\
+                  idstring)
+    logging.debug([val[0] for val, _id in wrong])
+    metrics = Metrics()
+    metrics.make_plots(opts, step,
+                       None, points[correct_ids],
+                       prefix='c_%s_correct_' % idstring)
+    metrics.make_plots(opts, step,
+                       None, points[wrong_ids],
+                       prefix='c_%s_wrong_' % idstring)
+
+def debug_updated_weights(opts, steps, weights, data):
+    """ Various debug plots for updated weights of training points.
+
+    """
+    assert len(data) == len(weights), 'Length mismatch'
+    ws_and_ids = sorted(zip(weights,
+                        range(len(weights))))
+    plt.figure()
+    ax1 = plt.subplot(211)
+    ax1.set_title('Weights over data points')
+    plt.scatter(range(len(weights)), weights, s=30)
+    num_plot = 4 * 16
+    if num_plot > len(weights):
+        return
+    ids = [_id for w, _id in ws_and_ids[:num_plot]]
+    plot_points = data.data[ids]
+    metrics = Metrics()
+    metrics.make_plots(opts, steps,
+                       None, plot_points,
+                       prefix='d_least_')
+    ids = [_id for w, _id in ws_and_ids[-num_plot:]]
+    plot_points = data.data[ids]
+    metrics = Metrics()
+    metrics.make_plots(opts, steps,
+                       None, plot_points,
+                       prefix='d_most_')
+    if data.labels is not None:
+        all_labels = np.unique(data.labels)
+        w_per_label = -1. * np.ones(len(all_labels))
+        for _id, y in enumerate(all_labels):
+            w_per_label[_id] = np.sum(
+                    weights[np.where(data.labels == y)[0]])
+        ax2 = plt.subplot(212)
+        ax2.set_title('Weights over labels')
+        plt.scatter(range(len(all_labels)), w_per_label, s=30)
+        filename = 'data_w{:02d}.png'.format(steps)
+        create_dir(opts['work_dir'])
+        plt.savefig(os.path.join(opts["work_dir"], filename))

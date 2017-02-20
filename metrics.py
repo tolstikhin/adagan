@@ -121,10 +121,11 @@ class Metrics(object):
         # Computing Coverage, refer to Section 4.3 of arxiv paper
         model_log_density = kde.score_samples(
             np.reshape(fake_points, [num_fake, -1]))
+        # np.percentaile(a, 10) returns t s.t. np.mean( a <= t ) = 0.1
         threshold = np.percentile(model_log_density, 5)
         real_points_log_density = kde.score_samples(
             np.reshape(real_points, [num_real, -1]))
-        ratio_not_covered = np.mean(real_points_log_density < threshold)
+        ratio_not_covered = np.mean(real_points_log_density <= threshold)
 
         log_p = np.mean(real_points_log_density)
         C = 1. - ratio_not_covered
@@ -134,7 +135,116 @@ class Metrics(object):
 
     def _evaluate_mnist(self, opts, step, real_points,
                         fake_points, validation_fake_points, prefix=''):
-        assert False, 'Not implemented yet'
+        assert len(fake_points) > 0, 'No fake digits to evaluate'
+        num_fake = len(fake_points)
+
+        # Classifying points with pre-trained model.
+        # Pre-trained classifier assumes inputs are in [0, 1.]
+        # There may be many points, so we will sess.run
+        # in small chunks.
+
+        if opts['input_normalize_sym']:
+            # Rescaling data back to [0, 1.]
+            if real_points is not None:
+                real_points = real_points / 2. + 0.5
+            fake_points = fake_points / 2. + 0.5
+            if validation_fake_points  is not None:
+                validation_fake_points = validation_fake_points / 2. + 0.5
+
+        with tf.Graph().as_default() as g:
+            model_file = os.path.join(opts['trained_model_path'],
+                                      opts['mnist_trained_model_file'])
+            saver = tf.train.import_meta_graph(model_file + '.meta')
+            with tf.Session().as_default() as sess:
+                saver.restore(sess, model_file)
+                input_ph = tf.get_collection('X_')
+                assert len(input_ph) > 0, 'Failed to load pre-trained model'
+                # Input placeholder
+                input_ph = input_ph[0]
+                dropout_keep_prob_ph = tf.get_collection('keep_prob')
+                assert len(dropout_keep_prob_ph) > 0, 'Failed to load pre-trained model'
+                dropout_keep_prob_ph = dropout_keep_prob_ph[0]
+                trained_net = tf.get_collection('prediction')
+                assert len(trained_net) > 0, 'Failed to load pre-trained model'
+                # Predicted digit
+                trained_net = trained_net[0]
+                logits = tf.get_collection('y_hat')
+                assert len(logits) > 0, 'Failed to load pre-trained model'
+                # Resulting 10 logits
+                logits = logits[0]
+                prob_max = tf.reduce_max(tf.nn.softmax(logits),
+                                         reduction_indices=[1])
+
+                batch_size = opts['tf_run_batch_size']
+                batches_num = int(np.ceil((num_fake + 0.) / batch_size))
+                result = []
+                result_probs = []
+                result_is_confident = []
+                thresh = opts['digit_classification_threshold']
+                for idx in xrange(batches_num):
+                    end_idx = min(num_fake, (idx + 1) * batch_size)
+                    batch_fake = fake_points[idx * batch_size:end_idx]
+                    _res, prob = sess.run(
+                        [trained_net, prob_max],
+                        feed_dict={input_ph: batch_fake,
+                                   dropout_keep_prob_ph: 1.})
+                    result.append(_res)
+                    result_probs.append(prob)
+                    result_is_confident.append(prob > thresh)
+                result = np.hstack(result)
+                result_probs = np.hstack(result_probs)
+                result_is_confident = np.hstack(result_is_confident)
+                assert len(result) == num_fake
+                assert len(result_probs) == num_fake
+
+        # Normalizing back
+        if opts['input_normalize_sym']:
+            # Rescaling data back to [0, 1.]
+            if real_points is not None:
+                real_points = 2. * (real_points - 0.5)
+            fake_points = 2. * (fake_points - 0.5)
+            if validation_fake_points  is not None:
+                validation_fake_points = 2. * (validation_fake_points - 0.5)
+
+        digits = result.astype(int)
+        logging.debug(
+            'Ratio of confident predictions: %.4f' %\
+            np.mean(result_is_confident))
+        # Plot one fake image per detected mode
+        gathered = []
+        points_to_plot = []
+        for (idx, dig) in enumerate(list(digits)):
+            if not dig in gathered and result_is_confident[idx]:
+                gathered.append(dig)
+                p = result_probs[idx]
+                points_to_plot.append(fake_points[idx])
+                logging.debug('Mode %03d covered with prob %.3f' % (dig, p))
+        # Confidence of made predictions
+        conf = np.mean(result_probs)
+        if len(points_to_plot) > 0:
+            self._make_plots_pics(
+                opts, step, None, np.array(points_to_plot), None, 'modes_')
+        if np.sum(result_is_confident) == 0:
+            C_actual = 0.
+            C = 0.
+            JS = 2.
+        else:
+            # Compute the actual coverage
+            C_actual = len(np.unique(digits[result_is_confident])) / 10.
+            # Compute the JS with uniform
+            JS = utils.js_div_uniform(digits, 10)
+            # Compute Pdata(Pmodel > t) where Pmodel( Pmodel > t ) = 0.95
+            # np.percentaile(a, 10) returns t s.t. np.mean( a <= t ) = 0.1
+            phat = np.bincount(digits[result_is_confident], minlength=10)
+            phat = (phat + 0.) / np.sum(phat)
+            threshold = np.percentile(phat, 5)
+            ratio_not_covered = np.mean(phat <= threshold)
+            C = 1. - ratio_not_covered
+
+        logging.info(
+            'Evaluating: JS=%.3f, C=%.3f, C_actual=%.3f, Confidence=%.4f' %\
+            (JS, C, C_actual, conf))
+        return (JS, C, C_actual, conf)
 
     def _evaluate_mnist3(self, opts, step, real_points,
                         fake_points, validation_fake_points, prefix=''):
@@ -143,7 +253,7 @@ class Metrics(object):
         Classify every picture in fake_points with a pre-trained MNIST
         classifier and compute the resulting distribution over the modes. It
         should be as close as possible to the uniform. Measure this distance
-        with KL divergence.
+        with KL divergence. Here modes refer to labels.
         """
 
         assert len(fake_points) > 0, 'No fake digits to evaluate'
@@ -190,6 +300,8 @@ class Metrics(object):
                 batches_num = int(np.ceil((num_fake + 0.) / batch_size))
                 result = []
                 result_probs = []
+                result_is_confident = []
+                thresh = opts['digit_classification_threshold']
                 for idx in xrange(batches_num):
                     end_idx = min(num_fake, (idx + 1) * batch_size)
                     batch_fake = fake_points[idx * batch_size:end_idx]
@@ -211,9 +323,12 @@ class Metrics(object):
                                    dropout_keep_prob_ph: 1.})
                     result.append(100 * _res1 + 10 * _res2 + _res3)
                     result_probs.append(
-                        np.minimum(np.minimum(prob1, prob2), prob3))
+                        np.column_stack((prob1, prob2, prob3)))
+                    result_is_confident.append(
+                        (prob1 > thresh) * (prob2 > thresh) * (prob3 > thresh))
                 result = np.hstack(result)
-                result_probs = np.hstack(result_probs)
+                result_probs = np.vstack(result_probs)
+                result_is_confident = np.hstack(result_is_confident)
                 assert len(result) == num_fake
                 assert len(result_probs) == num_fake
 
@@ -227,36 +342,45 @@ class Metrics(object):
                 validation_fake_points = 2. * (validation_fake_points - 0.5)
 
         digits = result.astype(int)
+        logging.debug(
+            'Ratio of confident predictions: %.4f' %\
+            np.mean(result_is_confident))
         # Plot one fake image per detected mode
         gathered = []
+        points_to_plot = []
         for (idx, dig) in enumerate(list(digits)):
-            if not dig in gathered:
+            if not dig in gathered and result_is_confident[idx]:
                 gathered.append(dig)
-                point = fake_points[idx]
-                self._make_plots_pics(
-                    opts, step, None, np.array([point]),
-                    None, 'mode%04dprob%.4f' % (dig, result_probs[idx]))
-        # Compute the coverage
-        C = len(np.unique(digits)) / 1000.
+                p = result_probs[idx]
+                points_to_plot.append(fake_points[idx])
+                logging.debug('Mode %03d covered with prob %.3f, %.3f, %.3f' %\
+                              (dig, p[0], p[1], p[2]))
         # Confidence of made predictions
         conf = np.mean(result_probs)
-        # Compute the JS with uniform
-        phat = np.bincount(digits, minlength=1000)
-        # logging.debug('Multinomial over %d modes of '
-        #               'the current mixture:' % len(phat))
-        # to_print = zip(range(len(phat)),phat)
-        # to_print = [el for el in to_print if el[1] > 0]
-        # logging.debug(to_print)
-        phat = (phat + 0.0) / np.sum(phat)
-        pu = (phat * .0 + 1.) / 1000
-        pref = (phat + pu) / 2.
-        JS = np.sum(np.log(pu / pref) * pu)
-        JS += np.sum(np.log(pref / pu) * pref)
-        JS = JS / 2.
+        if len(points_to_plot) > 0:
+            self._make_plots_pics(
+                opts, step, None, np.array(points_to_plot), None, 'modes_')
+        if np.sum(result_is_confident) == 0:
+            C_actual = 0.
+            C = 0.
+            JS = 2.
+        else:
+            # Compute the actual coverage
+            C_actual = len(np.unique(digits[result_is_confident])) / 1000.
+            # Compute the JS with uniform
+            JS = utils.js_div_uniform(digits)
+            # Compute Pdata(Pmodel > t) where Pmodel( Pmodel > t ) = 0.95
+            # np.percentaile(a, 10) returns t s.t. np.mean( a <= t ) = 0.1
+            phat = np.bincount(digits[result_is_confident], minlength=1000)
+            phat = (phat + 0.) / np.sum(phat)
+            threshold = np.percentile(phat, 5)
+            ratio_not_covered = np.mean(phat <= threshold)
+            C = 1. - ratio_not_covered
 
         logging.info(
-            'Evaluating: JS=%.3f, C=%.3f, Confidence=%.4f' % (JS, C, conf))
-        return (JS, C)
+            'Evaluating: JS=%.3f, C=%.3f, C_actual=%.3f, Confidence=%.4f' %\
+            (JS, C, C_actual, conf))
+        return (JS, C, C_actual, conf)
 
     def _make_plots_2d(self, opts, step, real_points,
                        fake_points, weights=None, prefix=''):
@@ -282,7 +406,8 @@ class Metrics(object):
             plt.clf()
             plt.axis([-max_val, max_val, -max_val, max_val])
             assert len(weights) == len(real)
-            plt.scatter(real[:, 0], real[:, 1], c=weights, s=40, edgecolors = 'face')
+            plt.scatter(real[:, 0], real[:, 1], c=weights, s=40,
+                        edgecolors='face')
             plt.colorbar()
             filename = prefix + 'weights{:02d}.png'.format(step)
             utils.create_dir(opts['work_dir'])
@@ -318,15 +443,17 @@ class Metrics(object):
 
 
     def _make_plots_pics(self, opts, step, real_points,
-                         fake_points, weights, prefix):
+                         fake_points, weights=None, prefix=''):
         pics = []
         if opts['dataset'] == 'mnist' or opts['dataset'] == 'mnist3':
             if opts['input_normalize_sym']:
                 if real_points is not None:
                     real_points = real_points / 2. + 0.5
-                fake_points = fake_points / 2. + 0.5
+                if fake_points is not None:
+                    fake_points = fake_points / 2. + 0.5
         num_pics = len(fake_points)
         assert num_pics > 0, 'No points to plot'
+        # Loading images
         for idx in xrange(num_pics):
             if opts['dataset'] == 'mnist3':
                 if opts['mnist3_to_channels']:
@@ -344,9 +471,21 @@ class Metrics(object):
                     pics.append(1. - np.concatenate(
                         [dig1, dig2, dig3], axis=1))
             else:
-                pics.append(1. - np.concatenate(
-                    fake_points[idx * 4:(idx + 1) * 4, :, :, :], axis=1))
-        image = np.concatenate(pics, axis=0)
+                pics.append(1. - fake_points[idx, :, :, :])
+        # Figuring out an arrangement
+        max_rows = 16
+        num_cols = int(np.ceil(1. * num_pics / max_rows))
+        last_col_num = num_pics % max_rows
+        if num_cols == 1:
+            image = np.concatenate(pics, axis=0)
+        else:
+            if last_col_num > 0:
+                for _ in xrange(max_rows - last_col_num):
+                    pics.append(np.ones(pics[0].shape))
+            pics = np.array(pics)
+            image = np.concatenate(np.split(pics, num_cols), axis=2)
+            image = np.concatenate(image, axis=0)
+
         plt.clf()
         if fake_points[0].shape[-1] == 1:
             image = image[:, :, 0]
@@ -359,4 +498,5 @@ class Metrics(object):
         utils.create_dir(opts['work_dir'])
         plt.savefig(os.path.join(opts["work_dir"], filename))
         plt.close()
+
         return True
