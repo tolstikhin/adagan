@@ -15,27 +15,31 @@ import utils
 
 flags = tf.app.flags
 flags.DEFINE_float("g_learning_rate", 0.016,
-                   "Learning rate for Generator optimizers [8e-4]")
+                   "Learning rate for Generator optimizers [16e-4]")
 flags.DEFINE_float("d_learning_rate", 0.0004,
-                   "Learning rate for Discriminator optimizers [8e-4]")
+                   "Learning rate for Discriminator optimizers [4e-4]")
 flags.DEFINE_float("learning_rate", 0.0008,
                    "Learning rate for other optimizers [8e-4]")
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
 flags.DEFINE_integer("zdim", 10, "Dimensionality of the latent space [100]")
 flags.DEFINE_float("init_std", 0.02, "Initial variance for weights [0.02]")
 flags.DEFINE_string("workdir", 'results', "Working directory ['results']")
+flags.DEFINE_string("use_std_params", True, "Use standard params for this dataset [True]")
+flags.DEFINE_string("unrolled", True, "Use unrolled GAN training [True]")
 flags.DEFINE_bool("is_bagging", False, "Do we want to use bagging instead of adagan? [False]")
 FLAGS = flags.FLAGS
 
 def main():
     opts = {}
     opts['random_seed'] = 66
-    opts['dataset'] = 'mnist3' # gmm, mnist, mnist3 ...
-    opts['unrolled'] = False # Use Unrolled GAN? (only for images)
-    opts['unrolling_steps'] = 2 # Used only if unrolled = True
+    opts['dataset'] = 'gmm' # gmm, mnist, mnist3 ...
+    opts['mog'] = True # Use mog sampling? For gmm in dim 2 only.
+    opts['unrolled'] = FLAGS.unrolled # Use Unrolled GAN? (only for images)
+    opts['use_std_params'] = FLAGS.use_std_params
+    opts['unrolling_steps'] = 5 # Used only if unrolled = True
     opts['data_dir'] = 'mnist'
     opts['trained_model_path'] = 'models'
-    opts['mnist_trained_model_file'] = 'mnist_trainSteps_19999_yhat' # 'mnist_trainSteps_20000'
+    opts['mnist_trained_model_file'] = 'mnist_trainSteps_19999' # 'mnist_trainSteps_20000'
     opts['gmm_max_val'] = 15.
     opts['toy_dataset_size'] = 10000
     opts['toy_dataset_dim'] = 2
@@ -77,6 +81,27 @@ def main():
     opts["plot_every"] = 1 # set -1 to run normally
     opts["eval_points_num"] = 3000 # 25600
     opts['digit_classification_threshold'] = 0.999
+
+    if opts['use_std_params']:
+        if opts['dataset'] is 'gmm':
+            # Standard toyUnrolledGan parameters
+            opts['samples_per_component'] = 3000 # 100 # 50000
+            opts["plot_every"] = 5 # set -1 to run normally
+            opts['d_num_filters'] = 64
+            opts['g_num_filters'] = 128
+            opts["init_std"] = .2
+            opts["batch_size"] = 512
+            opts['toy_dataset_size'] = 512 * 1000
+            opts['toy_dataset_dim'] = 2
+            opts['unrolling_steps'] = 5 # Used only if unrolled = True
+            opts['gmm_modes_num'] = 8
+            opts['latent_space_dim'] = 256
+            opts["gan_epoch_num"] = 25
+            opts['opt_d_learning_rate'] = 1e-4
+            opts['opt_g_learning_rate'] = 1e-3
+            opts["opt_beta1"] = .5
+        else:
+            pass
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')

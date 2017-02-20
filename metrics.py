@@ -416,7 +416,7 @@ class Metrics(object):
     def _make_plots_1d(self, opts, step, real_points,
                        fake_points, weights=None, prefix=''):
 
-        max_val = opts['gmm_max_val'] * 1.2
+        max_val = opts['gmm_max_val'] * 2
         num_real_points = len(real_points)
         num_fake_points = len(fake_points)
         real = np.reshape(real_points, [num_real_points, 1]).flatten()

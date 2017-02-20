@@ -31,12 +31,46 @@ class DataHandler(object):
         if opts['dataset'] == 'mnist3':
             self._load_mnist3(opts)
         if opts['dataset'] == 'gmm':
-            self._load_gmm(opts)
+            if opts['mog']:
+                self._load_mog(opts)
+            else:
+                self._load_gmm(opts)
 
         if opts['input_normalize_sym'] and  \
                 (opts['dataset'] == 'mnist' or opts['dataset'] == 'mnist3'):
             # Normalize data to [-1, 1]
             self.data = (self.data - 0.5) * 2.
+
+    def _load_mog(self, opts):
+        """Sample data from the mixture of Gaussians on circle.
+
+        """
+
+        # Only use this setting in dimension 2
+        assert opts['toy_dataset_dim'] == 2
+
+        # First we choose parameters of gmm and thus seed
+        radius = opts['gmm_max_val']
+        modes_num = opts["gmm_modes_num"]
+        np.random.seed(opts["random_seed"])
+
+        thetas = np.linspace(0, 2 * np.pi, modes_num)
+        mixture_means = np.stack((radius * np.sin(thetas), radius * np.cos(thetas)), axis=1)
+        mixture_variance = 0.01
+
+        # Now we sample points, for that we unseed
+        np.random.seed()
+        num = opts['toy_dataset_size']
+        X = np.zeros((num, opts['toy_dataset_dim'], 1, 1))
+        for idx in xrange(num):
+            comp_id = np.random.randint(modes_num)
+            mean = mixture_means[comp_id]
+            cov = mixture_variance * np.identity(opts["toy_dataset_dim"])
+            X[idx, :, 0, 0] = np.random.multivariate_normal(mean, cov, 1)
+
+        self.data_shape = (opts['toy_dataset_dim'], 1, 1)
+        self.data = X
+        self.num_points = len(X)
 
     def _load_gmm(self, opts):
         """Sample data from the mixture of Gaussians.
