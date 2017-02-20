@@ -51,7 +51,7 @@ class AdaGan(object):
         """
         #1. Train GAN
         gan_class = None
-        if opts['dataset'] is 'gmm':
+        if opts['dataset'] in ('gmm', 'circle_gmm'):
             if opts['unrolled'] is True:
                 gan_class = GAN.ToyUnrolledGan
             else:

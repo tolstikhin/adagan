@@ -32,8 +32,7 @@ FLAGS = flags.FLAGS
 def main():
     opts = {}
     opts['random_seed'] = 66
-    opts['dataset'] = 'gmm' # gmm, mnist, mnist3 ...
-    opts['mog'] = True # Use mog sampling? For gmm in dim 2 only.
+    opts['dataset'] = 'circle_gmm' # gmm, circle_gmm,  mnist, mnist3 ...
     opts['unrolled'] = FLAGS.unrolled # Use Unrolled GAN? (only for images)
     opts['use_std_params'] = FLAGS.use_std_params
     opts['unrolling_steps'] = 5 # Used only if unrolled = True
@@ -83,7 +82,7 @@ def main():
     opts['digit_classification_threshold'] = 0.999
 
     if opts['use_std_params']:
-        if opts['dataset'] is 'gmm':
+        if opts['dataset'] is 'circle_gmm':
             # Standard toyUnrolledGan parameters
             opts['samples_per_component'] = 3000 # 100 # 50000
             opts["plot_every"] = 5 # set -1 to run normally
@@ -91,12 +90,12 @@ def main():
             opts['g_num_filters'] = 128
             opts["init_std"] = .2
             opts["batch_size"] = 512
-            opts['toy_dataset_size'] = 512 * 10 # 00
+            opts['toy_dataset_size'] = 512 * 500
             opts['toy_dataset_dim'] = 2
             opts['unrolling_steps'] = 5 # Used only if unrolled = True
             opts['gmm_modes_num'] = 8
             opts['latent_space_dim'] = 256
-            opts["gan_epoch_num"] = 25
+            opts["gan_epoch_num"] = 50
             opts['opt_d_learning_rate'] = 1e-4
             opts['opt_g_learning_rate'] = 1e-3
             opts["opt_beta1"] = .5

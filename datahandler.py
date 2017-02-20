@@ -31,10 +31,9 @@ class DataHandler(object):
         if opts['dataset'] == 'mnist3':
             self._load_mnist3(opts)
         if opts['dataset'] == 'gmm':
-            if opts['mog']:
-                self._load_mog(opts)
-            else:
-                self._load_gmm(opts)
+            self._load_gmm(opts)
+        if opts['dataset'] == 'circle_gmm':
+            self._load_mog(opts)
 
         if opts['input_normalize_sym'] and  \
                 (opts['dataset'] == 'mnist' or opts['dataset'] == 'mnist3'):
