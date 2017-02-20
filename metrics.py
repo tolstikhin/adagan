@@ -243,6 +243,8 @@ class Metrics(object):
             # np.percentaile(a, 10) returns t s.t. np.mean( a <= t ) = 0.1
             phat = np.bincount(digits[result_is_confident], minlength=10)
             phat = (phat + 0.) / np.sum(phat)
+            logging.debug("Distribution over labels of the current mixture:")
+            logging.debug(", ".join(map(str, phat)))
             threshold = np.percentile(phat, 5)
             ratio_not_covered = np.mean(phat <= threshold)
             C = 1. - ratio_not_covered

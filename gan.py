@@ -95,6 +95,17 @@ class Gan(object):
         with self._session.as_default(), self._session.graph.as_default():
             return self._train_mixture_discriminator_internal(opts, fake_images)
 
+    def invert_points(self, opts, images):
+        """Invert the learned generator function for points in images.
+
+        Returns:
+            input vectors of size TODO
+
+        """
+        assert self._trained, 'Can not invert, not trained yet.'
+        with self._session.as_default(), self._session.graph.as_default():
+            return self._invert_points_internal(opts, images)
+
     def _run_batch(self, opts, operation, placeholder, feed,
                    placeholder2=None, feed2=None):
         """Wrapper around session.run to process huge data.
@@ -164,52 +175,14 @@ class Gan(object):
     def _train_mixture_discriminator_internal(self, opts, fake_images):
         assert False, 'Gan base class has no mixture discriminator method defined.'
 
+    def _invert_points_internal(self, opts, images):
+        assert False, 'Gan base class has no invertion method defined.'
+
 class ToyGan(Gan):
     """A simple GAN implementation, suitable for toy datasets.
 
     """
 
-#     # Architecture used in adagan arXiv paper
-#     def generator(self, opts, noise, reuse=False):
-#         """Generator function, suitable for simple toy experiments.
-# 
-#         Args:
-#             noise: [num_points, dim] array, where dim is dimensionality of the
-#                 latent noise space.
-#         Returns:
-#             [num_points, dim1, dim2, dim3] array, where the first coordinate
-#             indexes the points, which all are of the shape (dim1, dim2, dim3).
-#         """
-#         output_shape = self._data.data_shape
-# 
-#         with tf.variable_scope("GENERATOR", reuse=reuse):
-#             h0 = ops.linear(opts, noise, 10, 'h0_lin')
-#             h0 = tf.nn.relu(h0)
-#             h1 = ops.linear(opts, h0, 5, 'h1_lin')
-#             h1 = tf.nn.relu(h1)
-#             h2 = ops.linear(opts, h1, np.prod(output_shape), 'h2_lin')
-#             h2 = tf.reshape(h2, [-1] + list(output_shape))
-# 
-#         return h2
-# 
-#     def discriminator(self, opts, input_,
-#                       prefix='DISCRIMINATOR', reuse=False):
-#         """Discriminator function, suitable for simple toy experiments.
-# 
-#         """
-#         shape = input_.get_shape().as_list()
-#         assert len(shape) > 0, 'No inputs to discriminate.'
-# 
-#         with tf.variable_scope(prefix, reuse=reuse):
-#             h0 = ops.linear(opts, input_, 50, 'h0_lin')
-#             h0 = tf.nn.relu(h0)
-#             h1 = ops.linear(opts, h0, 30, 'h1_lin')
-#             h1 = tf.nn.relu(h1)
-#             h2 = ops.linear(opts, h1, 1, 'h2_lin')
-# 
-#         return h2
-
-    # Architecture used in unrolled gan paper
     def generator(self, opts, noise, reuse=False):
         """Generator function, suitable for simple toy experiments.
 
@@ -223,10 +196,10 @@ class ToyGan(Gan):
         output_shape = self._data.data_shape
 
         with tf.variable_scope("GENERATOR", reuse=reuse):
-            h0 = ops.linear(opts, noise, 128, 'h0_lin')
-            h0 = tf.nn.tanh(h0)
-            h1 = ops.linear(opts, h0, 128, 'h1_lin')
-            h1 = tf.nn.tanh(h1)
+            h0 = ops.linear(opts, noise, 10, 'h0_lin')
+            h0 = tf.nn.relu(h0)
+            h1 = ops.linear(opts, h0, 5, 'h1_lin')
+            h1 = tf.nn.relu(h1)
             h2 = ops.linear(opts, h1, np.prod(output_shape), 'h2_lin')
             h2 = tf.reshape(h2, [-1] + list(output_shape))
 
@@ -241,13 +214,13 @@ class ToyGan(Gan):
         assert len(shape) > 0, 'No inputs to discriminate.'
 
         with tf.variable_scope(prefix, reuse=reuse):
-            h0 = ops.linear(opts, input_, 128, 'h0_lin')
-            h0 = tf.nn.tanh(h0)
-            h1 = ops.linear(opts, h0, 128, 'h1_lin')
-            h1 = tf.nn.tanh(h1)
+            h0 = ops.linear(opts, input_, 50, 'h0_lin')
+            h0 = tf.nn.relu(h0)
+            h1 = ops.linear(opts, h0, 30, 'h1_lin')
+            h1 = tf.nn.relu(h1)
             h2 = ops.linear(opts, h1, 1, 'h2_lin')
 
-        return h2
+         return h2
 
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to GAN implementation.
@@ -303,8 +276,6 @@ class ToyGan(Gan):
         g_optim = ops.optimizer(opts, 'g').minimize(g_loss, var_list=g_vars)
         c_vars = [var for var in t_vars if 'CLASSIFIER/' in var.name]
         c_optim = ops.optimizer(opts).minimize(c_loss, var_list=c_vars)
-
-        writer = tf.summary.FileWriter(opts['work_dir']+'/tensorboard', self._session.graph)
 
         self._real_points_ph = real_points_ph
         self._fake_points_ph = fake_points_ph

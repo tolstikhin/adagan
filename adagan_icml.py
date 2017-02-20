@@ -36,7 +36,7 @@ def main():
     opts['unrolling_steps'] = 5 # Used only if unrolled = True
     opts['data_dir'] = 'mnist'
     opts['trained_model_path'] = 'models'
-    opts['mnist_trained_model_file'] = 'mnist_trainSteps_19999' # 'mnist_trainSteps_20000'
+    opts['mnist_trained_model_file'] = 'mnist_trainSteps_19999_yhat' # 'mnist_trainSteps_20000'
     opts['gmm_max_val'] = 15.
     opts['toy_dataset_size'] = 10000
     opts['toy_dataset_dim'] = 2
@@ -117,6 +117,7 @@ def main():
             res = metrics.evaluate(
                 opts, step, data.data[:500],
                 fake_points, more_fake_points, prefix='')
+    logging.debug("AdaGan finished working!")
 
 if __name__ == '__main__':
     main()
