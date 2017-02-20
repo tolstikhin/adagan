@@ -86,7 +86,7 @@ def main():
             # Standard toyUnrolledGan parameters
             opts['samples_per_component'] = 3000 # 100 # 50000
             opts["plot_every"] = 5 # set -1 to run normally
-            opts['d_num_filters'] = 64
+            opts['d_num_filters'] = 128
             opts['g_num_filters'] = 128
             opts["init_std"] = .2
             opts["batch_size"] = 512

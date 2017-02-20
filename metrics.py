@@ -48,6 +48,12 @@ class Metrics(object):
                                     fake_points, weights, prefix)
             else:
                 logging.debug('Can not plot, sorry...')
+        if opts['dataset'] == 'circle_gmm':
+            if opts['toy_dataset_dim'] == 2:
+                self._make_plots_2d(opts, step, real_points,
+                                    fake_points, weights, prefix)
+            else:
+                logging.debug('Can not plot, sorry...')
         elif opts['dataset'] in ('mnist', 'mnist3'):
             self._make_plots_pics(opts, step, real_points,
                                   fake_points, weights, prefix)
