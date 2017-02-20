@@ -7,6 +7,7 @@ import numpy as np
 import gan as GAN
 from utils import ArraySaver
 from datahandler import DataHandler
+from metrics import Metrics
 
 class AdaGan(object):
     """This class implements the AdaGAN meta-algorithm.
@@ -32,7 +33,6 @@ class AdaGan(object):
         self._mixture_weights = np.zeros(0)
         self._beta_heur = opts['beta_heur']
         self._saver = ArraySaver('disk', workdir=opts['work_dir'])
-
 
     def make_step(self, opts, data):
         """Makes one AdaGAN step and takes care of all necessary updates.
@@ -154,10 +154,12 @@ class AdaGan(object):
         # 1. First we need to train the big classifier, separating true data
         # from the fake one sampled from the current mixture generator.
         # Its outputs are already normalized in [0,1] with sigmoid
-        prob_real_data = self._get_prob_real_data(opts, gan, data).flatten()
+        prob_real_data = self._get_prob_real_data(opts, gan, data)
+        prob_real_data = prob_real_data.flatten()
         density_ratios = (1. - prob_real_data) / (prob_real_data + 1e-3)
         self._data_weights = self._compute_data_weights(opts,
                                                         density_ratios, beta)
+
 
     def _compute_data_weights(self, opts, density_ratios, beta):
         """Compute a discrite distribution over the training points.
@@ -299,10 +301,49 @@ class AdaGan(object):
             (data.num_points,) NumPy array, containing probabilities of true
             data. I.e., output of the sigmoid function.
         """
-        # Estimating a number of fake images (sampled from the current
-        # mixture model) necessary to train the mixture discriminator
-        batches_num = data.num_points / opts['batch_size']
-        num_fake_images = batches_num * opts['batch_size']
+        num_fake_images = data.num_points
         fake_images = self.sample_mixture(num_fake_images)
-        prob_real_data = gan.train_mixture_discriminator(opts, fake_images)
-        return prob_real_data
+        prob_real, prob_fake = \
+            gan.train_mixture_discriminator(opts, fake_images)
+        # We may also plot fake / real points correctly/incorrectly classified
+        # by the trained classifier just for debugging purposes
+        if prob_fake is not None:
+            self._mixture_classifier_debug(opts, prob_fake,
+                                           fake_images, real=False)
+        self._mixture_classifier_debug(opts, prob_real,
+                                       data.data, real=True)
+        return prob_real
+
+    def _mixture_classifier_debug(self, opts, probs,
+                                  points, num_plot=20, real=True):
+        """Small debugger for the mixture classifier's output.
+
+        """
+        num = len(points)
+        if len(probs) != num:
+            return
+        if num < 2 * num_plot:
+            return
+        sorted_vals_and_ids = sorted(zip(probs, range(num)))
+        if real:
+            correct = sorted_vals_and_ids[-num_plot:]
+            wrong = sorted_vals_and_ids[:num_plot]
+        else:
+            correct = sorted_vals_and_ids[:num_plot]
+            wrong = sorted_vals_and_ids[-num_plot:]
+        correct_ids = [_id for val, _id in correct]
+        wrong_ids = [_id for val, _id in wrong]
+        idstring = 'real' if real else 'fake'
+        logging.debug('Correctly classified %s points probs:' %\
+                      idstring)
+        logging.debug([val[0] for val, _id in correct])
+        logging.debug('Incorrectly classified %s points probs:' %\
+                      idstring)
+        logging.debug([val[0] for val, _id in wrong])
+        metrics = Metrics()
+        metrics.make_plots(opts, self.steps_made,
+                           None, points[correct_ids],
+                           prefix='c_%s_correct_' % idstring)
+        metrics.make_plots(opts, self.steps_made,
+                           None, points[wrong_ids],
+                           prefix='c_%s_wrong_' % idstring)
