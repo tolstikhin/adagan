@@ -1072,8 +1072,6 @@ class ImageUnrolledGan(ImageGan):
                     if opts['early_stop'] > 0 and counter > opts['early_stop']:
                         break
                 pbar.bam()
-<<<<<<< HEAD
-=======
 
 ## SUPPRESS THIS PART ONCE is_training becomes a placeholder ####
     def _sample_internal(self, opts, num):
