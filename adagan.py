@@ -8,6 +8,7 @@ import gan as GAN
 from utils import ArraySaver
 from datahandler import DataHandler
 from metrics import Metrics
+import utils
 
 class AdaGan(object):
     """This class implements the AdaGAN meta-algorithm.
@@ -73,6 +74,9 @@ class AdaGan(object):
             logging.debug('Saving a sample from the trained component...')
             sample = gan.sample(opts, opts['samples_per_component'])
             self._saver.save('samples{:02d}.npy'.format(self.steps_made), sample)
+            metrics = Metrics()
+            metrics.make_plots(opts, self.steps_made, data.data,
+                    sample[:min(len(sample), 4 * 16)], prefix='component_')
 
         if self.steps_made == 0:
             self._mixture_weights = np.array([beta])
@@ -153,9 +157,12 @@ class AdaGan(object):
         # Its outputs are already normalized in [0,1] with sigmoid
         prob_real_data = self._get_prob_real_data(opts, gan, data)
         prob_real_data = prob_real_data.flatten()
-        density_ratios = (1. - prob_real_data) / (prob_real_data + 1e-3)
+        density_ratios = (1. - prob_real_data) / (prob_real_data + 1e-8)
         self._data_weights = self._compute_data_weights(opts,
                                                         density_ratios, beta)
+        # We may also print some debug info on the computed weights
+        utils.debug_updated_weights(opts, self.steps_made,
+                                    self._data_weights, data)
 
 
     def _compute_data_weights(self, opts, density_ratios, beta):
@@ -204,6 +211,8 @@ class AdaGan(object):
         cumsum_ratios = np.cumsum(ratios_sorted)
         is_found = False
         # We first find the optimal lambda* which is guaranteed to exits.
+        # While Lemma 5 guarantees that lambda* <= 1, in practice this may
+        # not be the case, as we replace dPmodel/dPdata by (1-D)/D.
         for i in xrange(num):
             # Computing lambda from equation (18) of the arxiv paper
             _lambda = beta * num * (1. + (1.-beta) / beta \
@@ -305,42 +314,8 @@ class AdaGan(object):
         # We may also plot fake / real points correctly/incorrectly classified
         # by the trained classifier just for debugging purposes
         if prob_fake is not None:
-            self._mixture_classifier_debug(opts, prob_fake,
+            utils.debug_mixture_classifier(opts, self.steps_made, prob_fake,
                                            fake_images, real=False)
-        self._mixture_classifier_debug(opts, prob_real,
+        utils.debug_mixture_classifier(opts, self.steps_made, prob_real,
                                        data.data, real=True)
         return prob_real
-
-    def _mixture_classifier_debug(self, opts, probs,
-                                  points, num_plot=20, real=True):
-        """Small debugger for the mixture classifier's output.
-
-        """
-        num = len(points)
-        if len(probs) != num:
-            return
-        if num < 2 * num_plot:
-            return
-        sorted_vals_and_ids = sorted(zip(probs, range(num)))
-        if real:
-            correct = sorted_vals_and_ids[-num_plot:]
-            wrong = sorted_vals_and_ids[:num_plot]
-        else:
-            correct = sorted_vals_and_ids[:num_plot]
-            wrong = sorted_vals_and_ids[-num_plot:]
-        correct_ids = [_id for val, _id in correct]
-        wrong_ids = [_id for val, _id in wrong]
-        idstring = 'real' if real else 'fake'
-        logging.debug('Correctly classified %s points probs:' %\
-                      idstring)
-        logging.debug([val[0] for val, _id in correct])
-        logging.debug('Incorrectly classified %s points probs:' %\
-                      idstring)
-        logging.debug([val[0] for val, _id in wrong])
-        metrics = Metrics()
-        metrics.make_plots(opts, self.steps_made,
-                           None, points[correct_ids],
-                           prefix='c_%s_correct_' % idstring)
-        metrics.make_plots(opts, self.steps_made,
-                           None, points[wrong_ids],
-                           prefix='c_%s_wrong_' % idstring)

@@ -5,6 +5,7 @@
 import os
 import logging
 import numpy as np
+import utils
 
 class DataHandler(object):
     """A class storing and manipulating the dataset.
@@ -183,7 +184,9 @@ class DataHandler(object):
             self.data_shape = (28, 28 * 3, 1)
 
         self.data = X3/255.
+        y3 = y3.astype(int)
         self.labels = y3
         self.num_points = num
 
+        logging.debug('Training set JS=%.4f' % utils.js_div_uniform(y3))
         logging.debug('Loading Done.')

@@ -581,7 +581,7 @@ class ImageGan(Gan):
                         metrics = Metrics()
                         points_to_plot = self._run_batch(
                             opts, self._G, self._noise_ph,
-                            self._noise_for_plots[0:16],
+                            self._noise_for_plots[0:3 * 16],
                             self._is_training_ph, False)
                         metrics.make_plots(
                             opts,

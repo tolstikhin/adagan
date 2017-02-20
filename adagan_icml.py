@@ -21,7 +21,7 @@ flags.DEFINE_float("d_learning_rate", 0.0004,
 flags.DEFINE_float("learning_rate", 0.0008,
                    "Learning rate for other optimizers [8e-4]")
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
-flags.DEFINE_integer("zdim", 50, "Dimensionality of the latent space [100]")
+flags.DEFINE_integer("zdim", 10, "Dimensionality of the latent space [100]")
 flags.DEFINE_float("init_std", 0.02, "Initial variance for weights [0.02]")
 flags.DEFINE_string("workdir", 'results', "Working directory ['results']")
 flags.DEFINE_bool("is_bagging", False, "Do we want to use bagging instead of adagan? [False]")
@@ -43,7 +43,7 @@ def main():
     opts['mnist3_to_channels'] = False # Hide 3 digits of MNIST to channels
     opts['input_normalize_sym'] = True # Normalize data to [-1, 1]
     opts['adagan_steps_total'] = 5
-    opts['samples_per_component'] = 100 # 50000
+    opts['samples_per_component'] = 5000 # 50000
     opts['work_dir'] = FLAGS.workdir
     opts['is_bagging'] = FLAGS.is_bagging
     opts['beta_heur'] = 'uniform' # uniform, constant
@@ -70,12 +70,13 @@ def main():
     opts["opt_beta1"] = FLAGS.adam_beta1
     opts['batch_norm_eps'] = 1e-05
     opts['batch_norm_decay'] = 0.9
-    opts['d_num_filters'] = 64
-    opts['g_num_filters'] = 64
+    opts['d_num_filters'] = 16
+    opts['g_num_filters'] = 16
     opts['conv_filters_dim'] = 4
     opts["early_stop"] = -1 # set -1 to run normally
     opts["plot_every"] = 1 # set -1 to run normally
     opts["eval_points_num"] = 3000 # 25600
+    opts['digit_classification_threshold'] = 0.999
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')
@@ -109,10 +110,10 @@ def main():
                 opts, step, data.data[:500],
                 fake_points, more_fake_points, prefix='')
         else:
-            metrics.make_plots(opts, step, data.data[:500],
-                    fake_points[:16], adagan._data_weights[:500])
+            metrics.make_plots(opts, step, data.data,
+                    fake_points[:4 * 16], adagan._data_weights)
             logging.debug('Evaluating results')
-            (likelihood, C) = metrics.evaluate(
+            res = metrics.evaluate(
                 opts, step, data.data[:500],
                 fake_points, more_fake_points, prefix='')
 
