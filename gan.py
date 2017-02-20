@@ -768,8 +768,7 @@ class ImageGan(Gan):
         logging.debug('Training GAN')
         with ProgressBar(opts['verbose'], opts['gan_epoch_num']) as pbar:
             for _epoch in xrange(opts["gan_epoch_num"]):
-                for _idx in TQDM(opts, xrange(batches_num),
-                                 desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
+                for _idx in xrange(batches_num):
                     # logging.debug('Step %d of %d' % (_idx, batches_num ) )
                     data_ids = np.random.choice(train_size, opts['batch_size'],
                                                 replace=False, p=self._data_weights)
