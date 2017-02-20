@@ -51,10 +51,13 @@ class AdaGan(object):
         #1. Train GAN
         gan_class = None
         if opts['dataset'] == 'gmm':
-            gan_class = GAN.ToyGan
+            if opts['unrolled']:
+                gan_class = GAN.ToyUnrolledGan
+            else:
+                gan_class = GAN.ToyGan
         elif opts['dataset'] in ('mnist', 'mnist3'):
             if opts['unrolled']:
-                gan_class = GAN.UnrolledGan
+                gan_class = GAN.ImageUnrolledGan
             else:
                 gan_class = GAN.ImageGan
         else:

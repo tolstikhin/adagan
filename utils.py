@@ -7,6 +7,7 @@ import sys
 import copy
 import numpy as np
 import logging
+from tqdm import tqdm
 
 def generate_noise(opts, num=100):
     """Generate latent noise.
@@ -76,6 +77,12 @@ class ProgressBar(object):
     def __exit__(self, exc_type, exc_value, traceback):
         if self.verbose:
             sys.stdout.write("\n")
+
+def TQDM(opts, *args, **kwargs):
+    if opts['verbose']:
+        return tqdm(*args, ncols=80,  **kwargs)
+    else:
+        myRange
 
 def create_dir(d):
     if not os.path.exists(d):

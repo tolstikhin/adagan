@@ -6,10 +6,10 @@ import logging
 import tensorflow as tf
 import utils
 from utils import ProgressBar
+from utils import TQDM
 import numpy as np
 import ops
 from metrics import Metrics
-from collections import OrderedDict
 
 class Gan(object):
     """A base class for running individual GANs.
@@ -161,6 +161,47 @@ class ToyGan(Gan):
 
     """
 
+#     # Architecture used in adagan arXiv paper
+#     def generator(self, opts, noise, reuse=False):
+#         """Generator function, suitable for simple toy experiments.
+# 
+#         Args:
+#             noise: [num_points, dim] array, where dim is dimensionality of the
+#                 latent noise space.
+#         Returns:
+#             [num_points, dim1, dim2, dim3] array, where the first coordinate
+#             indexes the points, which all are of the shape (dim1, dim2, dim3).
+#         """
+#         output_shape = self._data.data_shape
+# 
+#         with tf.variable_scope("GENERATOR", reuse=reuse):
+#             h0 = ops.linear(opts, noise, 10, 'h0_lin')
+#             h0 = tf.nn.relu(h0)
+#             h1 = ops.linear(opts, h0, 5, 'h1_lin')
+#             h1 = tf.nn.relu(h1)
+#             h2 = ops.linear(opts, h1, np.prod(output_shape), 'h2_lin')
+#             h2 = tf.reshape(h2, [-1] + list(output_shape))
+# 
+#         return h2
+# 
+#     def discriminator(self, opts, input_,
+#                       prefix='DISCRIMINATOR', reuse=False):
+#         """Discriminator function, suitable for simple toy experiments.
+# 
+#         """
+#         shape = input_.get_shape().as_list()
+#         assert len(shape) > 0, 'No inputs to discriminate.'
+# 
+#         with tf.variable_scope(prefix, reuse=reuse):
+#             h0 = ops.linear(opts, input_, 50, 'h0_lin')
+#             h0 = tf.nn.relu(h0)
+#             h1 = ops.linear(opts, h0, 30, 'h1_lin')
+#             h1 = tf.nn.relu(h1)
+#             h2 = ops.linear(opts, h1, 1, 'h2_lin')
+# 
+#         return h2
+
+    # Architecture used in unrolled gan paper
     def generator(self, opts, noise, reuse=False):
         """Generator function, suitable for simple toy experiments.
 
@@ -174,10 +215,10 @@ class ToyGan(Gan):
         output_shape = self._data.data_shape
 
         with tf.variable_scope("GENERATOR", reuse=reuse):
-            h0 = ops.linear(opts, noise, 10, 'h0_lin')
-            h0 = tf.nn.relu(h0)
-            h1 = ops.linear(opts, h0, 5, 'h1_lin')
-            h1 = tf.nn.relu(h1)
+            h0 = ops.linear(opts, noise, 128, 'h0_lin')
+            h0 = tf.nn.tanh(h0)
+            h1 = ops.linear(opts, h0, 128, 'h1_lin')
+            h1 = tf.nn.tanh(h1)
             h2 = ops.linear(opts, h1, np.prod(output_shape), 'h2_lin')
             h2 = tf.reshape(h2, [-1] + list(output_shape))
 
@@ -192,10 +233,10 @@ class ToyGan(Gan):
         assert len(shape) > 0, 'No inputs to discriminate.'
 
         with tf.variable_scope(prefix, reuse=reuse):
-            h0 = ops.linear(opts, input_, 50, 'h0_lin')
-            h0 = tf.nn.relu(h0)
-            h1 = ops.linear(opts, h0, 30, 'h1_lin')
-            h1 = tf.nn.relu(h1)
+            h0 = ops.linear(opts, input_, 128, 'h0_lin')
+            h0 = tf.nn.tanh(h0)
+            h1 = ops.linear(opts, h0, 128, 'h1_lin')
+            h1 = tf.nn.tanh(h1)
             h2 = ops.linear(opts, h1, 1, 'h2_lin')
 
         return h2
@@ -255,6 +296,8 @@ class ToyGan(Gan):
         c_vars = [var for var in t_vars if 'CLASSIFIER/' in var.name]
         c_optim = ops.optimizer(opts).minimize(c_loss, var_list=c_vars)
 
+        writer = tf.summary.FileWriter(opts['work_dir']+'/tensorboard', self._session.graph)
+
         self._real_points_ph = real_points_ph
         self._fake_points_ph = fake_points_ph
         self._noise_ph = noise_ph
@@ -268,7 +311,6 @@ class ToyGan(Gan):
         self._d_optim = d_optim
         self._c_optim = c_optim
 
-
     def _train_internal(self, opts):
         """Train a GAN model.
 
@@ -281,7 +323,8 @@ class ToyGan(Gan):
         logging.debug('Training GAN')
         with ProgressBar(opts['verbose'], opts['gan_epoch_num']) as pbar:
             for _epoch in xrange(opts["gan_epoch_num"]):
-                for _idx in xrange(batches_num):
+                for _idx in TQDM(xrange(batches_num),
+                                 desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
                     data_ids = np.random.choice(train_size, opts['batch_size'],
                                                 replace=False, p=self._data_weights)
                     batch_images = self._data.data[data_ids].astype(np.float)
@@ -348,6 +391,178 @@ class ToyGan(Gan):
             opts, self._c_training,
             self._real_points_ph, self._data.data)
         return res
+
+
+class ToyUnrolledGan(ToyGan):
+    """A simple GAN implementation, suitable for toy datasets.
+
+    """
+
+    def __init__(self, opts, data, weights):
+
+        # Losses of the copied discriminator network 
+        self._d_loss_cp = None
+        self._d_optim_cp = None
+        # Rolling back ops (assign variable values fo true
+        # to copied discriminator network)
+        self._roll_back = None
+
+        Gan.__init__(self, opts, data, weights)
+
+    def _build_model_internal(self, opts):
+        """Build the Graph corresponding to GAN implementation.
+
+        """
+        data_shape = self._data.data_shape
+
+        # Placeholders
+        real_points_ph = tf.placeholder(
+            tf.float32, [None] + list(data_shape), name='real_points')
+        fake_points_ph = tf.placeholder(
+            tf.float32, [None] + list(data_shape), name='fake_points')
+        noise_ph = tf.placeholder(
+            tf.float32, [None] + [opts['latent_space_dim']], name='noise')
+
+        # Operations
+        G = self.generator(opts, noise_ph)
+
+        d_logits_real = self.discriminator(opts, real_points_ph)
+        d_logits_fake = self.discriminator(opts, G, reuse=True)
+
+        # Disccriminator copy for the unrolling steps
+        d_logits_real_cp = self.discriminator(
+            opts, real_points_ph, prefix='DISCRIMINATOR_CP')
+        d_logits_fake_cp = self.discriminator(
+            opts, G, prefix='DISCRIMINATOR_CP', reuse=True)
+
+        c_logits_real = self.discriminator(
+            opts, real_points_ph, prefix='CLASSIFIER')
+        c_logits_fake = self.discriminator(
+            opts, fake_points_ph, prefix='CLASSIFIER', reuse=True)
+        c_training = tf.nn.sigmoid(
+            self.discriminator(opts, real_points_ph, prefix='CLASSIFIER', reuse=True))
+
+        d_loss_real = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                d_logits_real, tf.ones_like(d_logits_real)))
+        d_loss_fake = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                d_logits_fake, tf.zeros_like(d_logits_fake)))
+        d_loss = d_loss_real + d_loss_fake
+
+        d_loss_real_cp = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                d_logits_real_cp, tf.ones_like(d_logits_real_cp)))
+        d_loss_fake_cp = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                d_logits_fake_cp, tf.zeros_like(d_logits_fake_cp)))
+        d_loss_cp = d_loss_real_cp + d_loss_fake_cp
+
+        g_loss = - d_loss_cp
+
+        c_loss_real = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                c_logits_real, tf.ones_like(c_logits_real)))
+        c_loss_fake = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                c_logits_fake, tf.zeros_like(c_logits_fake)))
+        c_loss = c_loss_real + c_loss_fake
+
+        t_vars = tf.trainable_variables()
+        d_vars = [var for var in t_vars if 'DISCRIMINATOR/' in var.name]
+        d_vars_cp = [var for var in t_vars if 'DISCRIMINATOR_CP/' in var.name]
+        c_vars = [var for var in t_vars if 'CLASSIFIER/' in var.name]
+        g_vars = [var for var in t_vars if 'GENERATOR/' in var.name]
+
+        # Ops to roll back the variable values of discriminator_cp
+        # Will be executed each time before the unrolling steps
+        if opts['unrolling_steps'] > 0:
+            with tf.variable_scope('assign'):
+                roll_back = []
+                for var, var_cp in zip(d_vars, d_vars_cp):
+                    roll_back.append(tf.assign(var_cp, var))
+
+        d_optim = ops.optimizer(opts, 'd').minimize(d_loss, var_list=d_vars)
+        d_optim_cp = ops.optimizer(opts, 'd').minimize(
+                                                       d_loss_cp,
+                                                       var_list=d_vars_cp)
+        c_optim = ops.optimizer(opts).minimize(c_loss, var_list=c_vars)
+        g_optim = ops.optimizer(opts, 'g').minimize(g_loss, var_list=g_vars)
+
+        # writer = tf.summary.FileWriter(opts['work_dir']+'/tensorboard', self._session.graph)
+
+        self._real_points_ph = real_points_ph
+        self._fake_points_ph = fake_points_ph
+        self._noise_ph = noise_ph
+
+        self._G = G
+        self._roll_back = roll_back
+        self._d_loss = d_loss
+        self._d_loss_cp = d_loss_cp
+        self._g_loss = g_loss
+        self._c_loss = c_loss
+        self._c_training = c_training
+        self._g_optim = g_optim
+        self._d_optim = d_optim
+        self._d_optim_cp = d_optim_cp
+        self._c_optim = c_optim
+
+        logging.debug("Building Graph Done.")
+
+
+    def _train_internal(self, opts):
+        """Train a GAN model.
+
+        """
+
+        batches_num = self._data.num_points / opts['batch_size']
+        train_size = self._data.num_points
+
+        counter = 0
+        logging.debug('Training GAN')
+        with ProgressBar(opts['verbose'], opts['gan_epoch_num']) as pbar:
+            for _epoch in xrange(opts["gan_epoch_num"]):
+                for _idx in TQDM(opts, xrange(batches_num),
+                                 desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
+                    data_ids = np.random.choice(train_size, opts['batch_size'],
+                                                replace=False, p=self._data_weights)
+                    batch_images = self._data.data[data_ids].astype(np.float)
+                    batch_noise = utils.generate_noise(opts, opts['batch_size'])
+                    # Update discriminator parameters
+                    for _iter in xrange(opts['d_steps']):
+                        _ = self._session.run(
+                            self._d_optim,
+                            feed_dict={self._real_points_ph: batch_images,
+                                       self._noise_ph: batch_noise})
+                    # Perform unrolling steps
+                    if opts['unrolling_steps'] > 0:
+                        # Roll back discriminator_cp's variables
+                        self._session.run(self._roll_back)
+                        # Unrolling steps
+                        for _iter in xrange(opts['unrolling_steps']):
+                            self._session.run(
+                                self._d_optim_cp,
+                                feed_dict={self._real_points_ph: batch_images,
+                                           self._noise_ph: batch_noise})
+                    # Update generator parameters
+                    for _iter in xrange(opts['g_steps']):
+                        _ = self._session.run(
+                            self._g_optim, feed_dict={self._noise_ph: batch_noise})
+                    counter += 1
+                    if opts['verbose'] and counter % 100 == 0:
+                        metrics = Metrics()
+                        points_to_plot = self._run_batch(
+                            opts, self._G, self._noise_ph,
+                            self._noise_for_plots[0:300])
+                        metrics.make_plots(
+                            opts,
+                            counter,
+                            self._data.data[0:300],
+                            points_to_plot,
+                            prefix='gan_e%d_mb%d_' % (_epoch, _idx))
+                pbar.bam()
+
+
 
 class ImageGan(Gan):
     """A simple GAN implementation, suitable for pictures.
@@ -545,7 +760,8 @@ class ImageGan(Gan):
         logging.debug('Training GAN')
         with ProgressBar(opts['verbose'], opts['gan_epoch_num']) as pbar:
             for _epoch in xrange(opts["gan_epoch_num"]):
-                for _idx in xrange(batches_num):
+                for _idx in TQDM(xrange(batches_num),
+                                 desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
                     # logging.debug('Step %d of %d' % (_idx, batches_num ) )
                     data_ids = np.random.choice(train_size, opts['batch_size'],
                                                 replace=False, p=self._data_weights)
@@ -567,9 +783,9 @@ class ImageGan(Gan):
                     counter += 1
 
                     if opts['verbose'] and counter % opts['plot_every'] == 0:
-                        logging.debug(
-                            'Epoch: %d/%d, batch:%d/%d' % \
-                            (_epoch, opts['gan_epoch_num'], _idx, batches_num))
+                        # logging.debug(
+                        #     'Epoch: %d/%d, batch:%d/%d' % \
+                        #     (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
                         metrics = Metrics()
                         points_to_plot = self._run_batch(
                             opts, self._G, self._noise_ph,
@@ -628,80 +844,29 @@ class ImageGan(Gan):
             self._is_training_ph, False)
         return res
 
-class UnrolledGan(ImageGan):
 
-### Generator and Discriminator without batch_norm ####
-#     def generator(self, opts, noise, is_training, reuse=False):
-#         """Generator function, suitable for simple picture experiments.
-# 
-#         Args:
-#             noise: [num_points, dim] array, where dim is dimensionality of the
-#                 latent noise space.
-#             is_training: bool, defines whether to use batch_norm in the train
-#                 or test mode.
-#         Returns:
-#             [num_points, dim1, dim2, dim3] array, where the first coordinate
-#             indexes the points, which all are of the shape (dim1, dim2, dim3).
-#         """
-# 
-#         output_shape = self._data.data_shape # (dim1, dim2, dim3)
-#         # Computing the number of noise vectors on-the-go
-#         dim1 = tf.shape(noise)[0]
-#         num_filters = opts['g_num_filters']
-# 
-#         with tf.variable_scope("GENERATOR", reuse=reuse):
-# 
-#             height = output_shape[0] / 4
-#             width = output_shape[1] / 4
-#             h0 = ops.linear(opts, noise, num_filters * height * width,
-#                             scope='h0_lin')
-#             h0 = tf.reshape(h0, [-1, height, width, num_filters])
-#             h0 = tf.nn.relu(h0)
-#             _out_shape = [dim1, height * 2, width * 2, num_filters / 2]
-#             # for 28 x 28 does 7 x 7 --> 14 x 14
-#             h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
-#             h1 = tf.nn.relu(h1)
-#             _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
-#             # for 28 x 28 does 14 x 14 --> 28 x 28 
-#             h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
-#             h2 = tf.nn.relu(h2)
-#             _out_shape = [dim1] + list(output_shape)
-#             # data_shape[0] x data_shape[1] x ? -> data_shape
-#             h3 = ops.deconv2d(opts, h2, _out_shape,
-#                               d_h=1, d_w=1, scope='h3_deconv')
-# 
-#         return tf.nn.sigmoid(h3)
-# 
-#     def discriminator(self, opts, input_, is_training,
-#                       prefix='DISCRIMINATOR', reuse=False):
-#         """Discriminator function, suitable for simple toy experiments.
-# 
-#         """
-#         shape = input_.get_shape().as_list()
-#         assert len(shape) > 0, 'No inputs to discriminate.'
-#         num_filters = opts['d_num_filters']
-# 
-#         with tf.variable_scope(prefix, reuse=reuse):
-#             h0 = ops.conv2d(opts, input_, num_filters, scope='h0_conv')
-#             h0 = ops.lrelu(h0)
-#             h1 = ops.conv2d(opts, h0, num_filters * 2, scope='h1_conv')
-#             h1 = ops.lrelu(h1)
-#             h2 = ops.conv2d(opts, h1, num_filters * 4, scope='h2_conv')
-#             h2 = ops.lrelu(h2)
-#             h3 = ops.linear(opts, h2, 1, scope='h3_lin')
-# 
-#         return h3
+class ImageUnrolledGan(ImageGan):
+    """A simple GAN implementation, suitable for pictures.
+
+    """
+
+    def __init__(self, opts, data, weights):
+
+        # One more placeholder for batch norm
+        self._is_training_ph = None
+        # Losses of the copied discriminator network 
+        self._d_loss_cp = None
+        self._d_optim_cp = None
+        # Rolling back ops (assign variable values fo true
+        # to copied discriminator network)
+        self._roll_back = None
+
+        Gan.__init__(self, opts, data, weights)
 
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to GAN implementation.
 
         """
-        from keras.optimizers import Adam
-
-        ds = tf.contrib.distributions
-        slim = tf.contrib.slim
-        graph_replace = tf.contrib.graph_editor.graph_replace
-
         data_shape = self._data.data_shape
 
         # Placeholders
@@ -711,8 +876,7 @@ class UnrolledGan(ImageGan):
             tf.float32, [None] + list(data_shape), name='fake_points')
         noise_ph = tf.placeholder(
             tf.float32, [None] + [opts['latent_space_dim']], name='noise')
-        # is_training_ph = tf.placeholder(tf.bool, name='is_train')
-        is_training_ph = True
+        is_training_ph = tf.placeholder(tf.bool, name='is_train')
 
 
         # Operations
@@ -725,6 +889,13 @@ class UnrolledGan(ImageGan):
 
         d_logits_real = self.discriminator(opts, real_points_ph, is_training_ph)
         d_logits_fake = self.discriminator(opts, G, is_training_ph, reuse=True)
+
+        # Disccriminator copy for the unrolling steps
+        d_logits_real_cp = self.discriminator(
+            opts, real_points_ph, is_training_ph, prefix='DISCRIMINATOR_CP')
+        d_logits_fake_cp = self.discriminator(
+            opts, G, is_training_ph, prefix='DISCRIMINATOR_CP', reuse=True)
+
 
         c_logits_real = self.discriminator(
             opts, real_points_ph, is_training_ph, prefix='CLASSIFIER')
@@ -742,6 +913,16 @@ class UnrolledGan(ImageGan):
                 d_logits_fake, tf.zeros_like(d_logits_fake)))
         d_loss = d_loss_real + d_loss_fake
 
+        d_loss_real_cp = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                d_logits_real_cp, tf.ones_like(d_logits_real_cp)))
+        d_loss_fake_cp = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                d_logits_fake_cp, tf.zeros_like(d_logits_fake_cp)))
+        d_loss_cp = d_loss_real_cp + d_loss_fake_cp
+
+        g_loss = - d_loss_cp
+
         c_loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
                 c_logits_real, tf.ones_like(c_logits_real)))
@@ -752,79 +933,70 @@ class UnrolledGan(ImageGan):
 
         t_vars = tf.trainable_variables()
         d_vars = [var for var in t_vars if 'DISCRIMINATOR/' in var.name]
+        d_vars_cp = [var for var in t_vars if 'DISCRIMINATOR_CP/' in var.name]
         c_vars = [var for var in t_vars if 'CLASSIFIER/' in var.name]
         g_vars = [var for var in t_vars if 'GENERATOR/' in var.name]
 
-        # Vanilla discriminator update
-        d_opt = Adam(lr=opts['opt_learning_rate'],
-                     beta_1=opts['opt_beta1'],
-                     epsilon=1e-8) ## UnrolledGAN keep it a param 
-        updates = d_opt.get_updates(d_vars, [], d_loss)
-        d_optim = tf.group(*updates, name="d_optim")
-
-        # Vanilla classifier update
-        c_optim = ops.optimizer(opts).minimize(c_loss, var_list=c_vars)
-
-        # Unroll optimization of the discrimiantor
+        # Ops to roll back the variable values of discriminator_cp
+        # Will be executed each time before the unrolling steps
         if opts['unrolling_steps'] > 0:
-            # Get dictionary mapping from variables to their
-            # update value after one optimization step
-            update_dict = self.extract_update_dict(updates)
-            cur_update_dict = update_dict
-            for i in xrange(opts['unrolling_steps'] - 1):
-                # Compute variable updates given the
-                # previous iteration's updated variable
-                cur_update_dict = graph_replace(update_dict, cur_update_dict)
-            # Final unrolled loss uses the parameters at the last time step
-            g_loss = -graph_replace(d_loss, cur_update_dict)
-        else:
-            g_loss = -d_loss
+            with tf.variable_scope('assign'):
+                roll_back = []
+                for var, var_cp in zip(d_vars, d_vars_cp):
+                    roll_back.append(tf.assign(var_cp, var))
 
-        # Optimize the generator on the unrolled loss
-        g_optim = ops.optimizer(opts).minimize(g_loss, var_list=g_vars)
+        d_optim = ops.optimizer(opts, 'd').minimize(d_loss, var_list=d_vars)
+        d_optim_cp = ops.optimizer(opts, 'd').minimize(
+                                                       d_loss_cp,
+                                                       var_list=d_vars_cp)
+        c_optim = ops.optimizer(opts).minimize(c_loss, var_list=c_vars)
+        g_optim = ops.optimizer(opts, 'g').minimize(g_loss, var_list=g_vars)
+
+        # writer = tf.summary.FileWriter(opts['work_dir']+'/tensorboard', self._session.graph)
+
+        # d_optim_op = ops.optimizer(opts, 'd')
+        # g_optim_op = ops.optimizer(opts, 'g')
+
+        # def debug_grads(grad, var):
+        #     _grad =  tf.Print(
+        #         grad, # grads_and_vars,
+        #         [tf.global_norm([grad])], # tf.global_norm([grad for (grad, var) in grads_and_vars]).get_shape(),
+        #         'Global grad norm of %s: ' % var.name)
+        #     return _grad, var
+
+        # d_grads_and_vars = [debug_grads(grad, var) for (grad, var) in \
+        #     d_optim_op.compute_gradients(d_loss, var_list=d_vars)]
+        # g_grads_and_vars = [debug_grads(grad, var) for (grad, var) in \
+        #     g_optim_op.compute_gradients(g_loss, var_list=g_vars)]
+        # d_optim = d_optim_op.apply_gradients(d_grads_and_vars)
+        # g_optim = g_optim_op.apply_gradients(g_grads_and_vars)
+
+        c_vars = [var for var in t_vars if 'CLASSIFIER/' in var.name]
+        c_optim = ops.optimizer(opts).minimize(c_loss, var_list=c_vars)
 
         self._real_points_ph = real_points_ph
         self._fake_points_ph = fake_points_ph
         self._noise_ph = noise_ph
         self._is_training_ph = is_training_ph
         self._G = G
+        self._roll_back = roll_back
         self._d_loss = d_loss
+        self._d_loss_cp = d_loss_cp
         self._g_loss = g_loss
         self._c_loss = c_loss
         self._c_training = c_training
         self._g_optim = g_optim
         self._d_optim = d_optim
+        self._d_optim_cp = d_optim_cp
         self._c_optim = c_optim
 
-    def extract_update_dict(self,update_ops):
-        ### From Unrolled GAN demo ### 
-        """Extract variables and their new values from Assign and AssignAdd ops.
+        logging.debug("Building Graph Done.")
 
-        Args:
-            update_ops: list of Assign and AssignAdd ops, typically computed using Keras' opt.get_updates()
-
-        Returns:
-            dict mapping from variable values to their updated value
-        """
-        name_to_var = {v.name: v for v in tf.global_variables()}
-        updates = OrderedDict()
-        for update in update_ops:
-            var_name = update.op.inputs[0].name
-            var = name_to_var[var_name]
-            value = update.op.inputs[1]
-            if update.op.type == 'Assign':
-                updates[var.value()] = value
-            elif update.op.type == 'AssignAdd':
-                updates[var.value()] = var + value
-            else:
-                raise ValueError("Update op type (%s) must be of type Assign or AssignAdd"%update_op.op.type)
-        return updates
 
     def _train_internal(self, opts):
         """Train a GAN model.
 
         """
-
         batches_num = self._data.num_points / opts['batch_size']
         train_size = self._data.num_points
 
@@ -832,7 +1004,8 @@ class UnrolledGan(ImageGan):
         logging.debug('Training GAN')
         with ProgressBar(opts['verbose'], opts['gan_epoch_num']) as pbar:
             for _epoch in xrange(opts["gan_epoch_num"]):
-                for _idx in xrange(batches_num):
+                for _idx in TQDM(xrange(batches_num),
+                                 desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
                     # logging.debug('Step %d of %d' % (_idx, batches_num ) )
                     data_ids = np.random.choice(train_size, opts['batch_size'],
                                                 replace=False, p=self._data_weights)
@@ -843,24 +1016,36 @@ class UnrolledGan(ImageGan):
                         _ = self._session.run(
                             self._d_optim,
                             feed_dict={self._real_points_ph: batch_images,
-                                       self._noise_ph: batch_noise}) # add is_training placeh.
+                                       self._noise_ph: batch_noise,
+                                       self._is_training_ph: True})
+                    # Perform unrolling steps
+                    if opts['unrolling_steps'] > 0:
+                        # Roll back discriminator_cp's variables
+                        self._session.run(self._roll_back)
+                        # Unrolling steps
+                        for _iter in xrange(opts['unrolling_steps']):
+                            self._session.run(
+                                self._d_optim_cp,
+                                feed_dict={self._real_points_ph: batch_images,
+                                           self._noise_ph: batch_noise,
+                                           self._is_training_ph: True})
                     # Update generator parameters
                     for _iter in xrange(opts['g_steps']):
                         _ = self._session.run(
                             self._g_optim,
-                            feed_dict={self._real_points_ph: batch_images,
-                            self._noise_ph: batch_noise}) # add is_training placeh.
+                            feed_dict={self._noise_ph: batch_noise,
+                            self._is_training_ph: True})
                     counter += 1
 
                     if opts['verbose'] and counter % opts['plot_every'] == 0:
-                        logging.debug(
-                            'Epoch: %d/%d, batch:%d/%d' % \
-                            (_epoch, opts['gan_epoch_num'], _idx, batches_num))
+                        # logging.debug(
+                        #     'Epoch: %d/%d, batch:%d/%d' % \
+                        #     (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
                         metrics = Metrics()
                         points_to_plot = self._run_batch(
                             opts, self._G, self._noise_ph,
-                            self._noise_for_plots[0:16])
-                            # add is_training placeh.
+                            self._noise_for_plots[0:16],
+                            self._is_training_ph, False)
                         metrics.make_plots(
                             opts,
                             counter,
@@ -870,46 +1055,3 @@ class UnrolledGan(ImageGan):
                     if opts['early_stop'] > 0 and counter > opts['early_stop']:
                         break
                 pbar.bam()
-
-## SUPPRESS THIS PART ONCE is_training becomes a placeholder ####
-    def _sample_internal(self, opts, num):
-        """Sample from the trained GAN model.
-
-        """
-        noise = utils.generate_noise(opts, num)
-        sample = self._run_batch(
-            opts, self._G, self._noise_ph, noise)
-        #     self._is_training_ph, False)
-        # sample = self._session.run(
-        #     self._G, feed_dict={self._noise_ph: noise})
-        return sample
-
-    def _train_mixture_discriminator_internal(self, opts, fake_images):
-        """Train a classifier separating true data from points in fake_images.
-
-        """
-
-        batches_num = self._data.num_points / opts['batch_size']
-        logging.debug('Training a mixture discriminator')
-        with ProgressBar(opts['verbose'], opts['mixture_c_epoch_num']) as pbar:
-            for epoch in xrange(opts["mixture_c_epoch_num"]):
-                for idx in xrange(batches_num):
-                    ids = np.random.choice(len(fake_images), opts['batch_size'],
-                                           replace=False)
-                    batch_fake_images = fake_images[ids]
-                    ids = np.random.choice(self._data.num_points, opts['batch_size'],
-                                           replace=False)
-                    batch_real_images = self._data.data[ids]
-                    _ = self._session.run(
-                        self._c_optim,
-                        feed_dict={self._real_points_ph: batch_real_images,
-                                   self._fake_points_ph: batch_fake_images})
-                                   # self._is_training_ph: True})
-                pbar.bam()
-
-        res = self._run_batch(
-            opts, self._c_training,
-            self._real_points_ph, self._data.data,
-            self._is_training_ph, False)
-        return res
-
