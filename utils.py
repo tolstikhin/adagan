@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from metrics import Metrics
-from tqdm import tqdm
+# from tqdm import tqdm
 
 def generate_noise(opts, num=100):
     """Generate latent noise.
@@ -82,11 +82,12 @@ class ProgressBar(object):
         if self.verbose:
             sys.stdout.write("\n")
 
-def TQDM(opts, *args, **kwargs):
-    if opts['verbose']:
+def TQDM(opts, myRange, *args, **kwargs):
+    # if opts['verbose']:
+    if False:
         return tqdm(*args, ncols=80,  **kwargs)
     else:
-        myRange
+        return myRange
 
 def create_dir(d):
     if not os.path.exists(d):
