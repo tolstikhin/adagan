@@ -79,7 +79,19 @@ class AdaGan(object):
             self._saver.save('samples{:02d}.npy'.format(self.steps_made), sample)
             metrics = Metrics()
             metrics.make_plots(opts, self.steps_made, data.data,
-                    sample[:min(len(sample), 4 * 16)], prefix='component_')
+                sample[:min(len(sample), 4 * 16)], prefix='component_')
+            #3. Invert the generator, while we still have the graph alive.
+            if opts["inverse_metric"]:
+                ids = np.random.choice(data.num_points, 100, replace=False)
+                counter = 0
+                for _id in ids:
+                    image_hat, z, err = gan.invert_point(opts, data.data[_id])
+                    metrics.make_plots(opts, self.steps_made, data.data,
+                                       np.array([image_hat, data.data[_id]]),
+                                       prefix='inverted%d_' % counter)
+                    logging.debug('Inverted %d with mse=%.5f' % (counter, err))
+                    counter += 1
+
 
         if self.steps_made == 0:
             self._mixture_weights = np.array([beta])

@@ -31,7 +31,7 @@ FLAGS = flags.FLAGS
 def main():
     opts = {}
     opts['random_seed'] = 66
-    opts['dataset'] = 'mnist' # gmm, circle_gmm,  mnist, mnist3 ...
+    opts['dataset'] = 'mnist3' # gmm, circle_gmm,  mnist, mnist3 ...
     opts['unrolled'] = FLAGS.unrolled # Use Unrolled GAN? (only for images)
     opts['unrolling_steps'] = 5 # Used only if unrolled = True
     opts['data_dir'] = 'mnist'
@@ -40,11 +40,11 @@ def main():
     opts['gmm_max_val'] = 15.
     opts['toy_dataset_size'] = 10000
     opts['toy_dataset_dim'] = 2
-    opts['mnist3_dataset_size'] = 128 # 64 * 2500
+    opts['mnist3_dataset_size'] = 256 # 64 * 2500
     opts['mnist3_to_channels'] = False # Hide 3 digits of MNIST to channels
     opts['input_normalize_sym'] = True # Normalize data to [-1, 1]
     opts['adagan_steps_total'] = 1
-    opts['samples_per_component'] = 50000 # 50000
+    opts['samples_per_component'] = 100 # 50000
     opts['work_dir'] = FLAGS.workdir
     opts['is_bagging'] = FLAGS.is_bagging
     opts['beta_heur'] = 'uniform' # uniform, constant
@@ -63,7 +63,7 @@ def main():
 
     opts['gmm_modes_num'] = 5
     opts['latent_space_dim'] = FLAGS.zdim
-    opts["gan_epoch_num"] = 10
+    opts["gan_epoch_num"] = 2
     opts["mixture_c_epoch_num"] = 1
     opts['opt_learning_rate'] = FLAGS.learning_rate
     opts['opt_d_learning_rate'] = FLAGS.d_learning_rate
@@ -73,11 +73,12 @@ def main():
     opts['batch_norm_decay'] = 0.9
     opts['d_num_filters'] = 16
     opts['g_num_filters'] = 16
-    opts['conv_filters_dim'] = 5
+    opts['conv_filters_dim'] = 4
     opts["early_stop"] = -1 # set -1 to run normally
     opts["plot_every"] = 1 # set -1 to run normally
-    opts["eval_points_num"] = 50000 # 25600
+    opts["eval_points_num"] = 100 # 25600
     opts['digit_classification_threshold'] = 0.999
+    opts['inverse_metric'] = True # Use metric from the Unrolled GAN paper?
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')

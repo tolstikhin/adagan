@@ -33,7 +33,7 @@ class Gan(object):
         self._real_points_ph = None
         self._fake_points_ph = None
         self._noise_ph = None
-
+        self._inv_target_ph = None
 
         # Main operations
         self._G = None # Generator function
@@ -41,16 +41,27 @@ class Gan(object):
         self._g_loss = None # Loss of generator
         self._c_loss = None # Loss of mixture discriminator
         self._c_training = None # Outputs of the mixture discriminator on data
+        self._inv_loss = None
+
+        # Variables
+        self._inv_input = None
+
+        # Optimizers
+        self._g_optim = None
+        self._d_optim = None
+        self._c_optim = None
+        self._inv_optim = None
 
         with self._session.as_default(), self._session.graph.as_default():
             logging.debug('Building the graph...')
             self._build_model_internal(opts)
+            if opts['inverse_metric']:
+                logging.debug('Adding inversion ops to the graph...')
+                self._add_inversion_ops(opts)
+
         # Make sure AdamOptimizer, if used in the Graph, is defined before
         # calling global_variables_initializer().
-        try:
-            init = tf.global_variables_initializer()
-        except:
-            init = tf.initialize_all_variables()
+        init = tf.global_variables_initializer()
         self._session.run(init)
 
     def __enter__(self):
@@ -95,16 +106,72 @@ class Gan(object):
         with self._session.as_default(), self._session.graph.as_default():
             return self._train_mixture_discriminator_internal(opts, fake_images)
 
-    def invert_points(self, opts, images):
-        """Invert the learned generator function for points in images.
+    def invert_point(self, opts, image):
+        """Invert the learned generator function for image.
 
-        Returns:
-            input vectors of size TODO
+        Args:
+            image: numpy array of shape data_shape.
 
         """
         assert self._trained, 'Can not invert, not trained yet.'
+        data_shape = self._data.data_shape
         with self._session.as_default(), self._session.graph.as_default():
-            return self._invert_points_internal(opts, images)
+            target_ph = self._inv_target_ph
+            params = self._inv_input
+            loss = self._inv_loss
+            optim = self._inv_optim
+            opt_vals = []
+            opt_params = []
+            for _start in xrange(5):
+                all_vars = tf.get_collection(
+                    tf.GraphKeys.TRAINABLE_VARIABLES, scope="inversion")
+                self._session.run(tf.variables_initializer(all_vars))
+                print 'Loss = ', loss.eval(feed_dict={target_ph:image})
+                prev_val = 1e4
+                check_every = 50
+                steps = 1
+                while True:
+                    self._session.run(
+                        optim, feed_dict={target_ph:image})
+                    if steps % check_every == 0:
+                        err = loss.eval(feed_dict={target_ph:image})
+                        logging.debug('Init %02d, steps %d, loss %f' %\
+                                      (_start, steps, err))
+                        relative_improvement = np.abs(prev_val - err) / prev_val
+                        if relative_improvement < 1e-4:
+                            opt_vals.append(err)
+                            opt_params.append(self._session.run(params))
+                            break
+                        prev_val = err
+                    steps += 1
+            best_id = sorted(zip(opt_vals, range(len(opt_vals))))[0][1]
+            opt_val = opt_vals[best_id]
+            opt_param = opt_params[best_id]
+            opt_image = self._G.eval(
+                feed_dict={self._noise_ph:opt_param,
+                           self._is_training_ph:False})[0]
+
+            return opt_image, opt_params[best_id], opt_vals[best_id]
+
+    def _add_inversion_ops(self, opts):
+        data_shape = self._data.data_shape
+        with tf.variable_scope("inversion"):
+            target_ph = tf.placeholder(
+                tf.float32, data_shape, name='target_ph')
+            params = tf.get_variable(
+                "inverted", [1, opts['latent_space_dim']],
+                tf.float32, tf.random_normal_initializer(stddev=1.))
+        reconstructed_image = self.generator(
+            opts, params, is_training=False, reuse=True)
+        with tf.variable_scope("inversion"):
+            loss = tf.reduce_mean(
+                tf.square(tf.sub(reconstructed_image, target_ph)))
+            optim = tf.train.MomentumOptimizer(0.1, 0.9)
+            optim = optim.minimize(loss, var_list=[params])
+        self._inv_target_ph = target_ph
+        self._inv_input = params
+        self._inv_optim = optim
+        self._inv_loss = loss
 
     def _run_batch(self, opts, operation, placeholder, feed,
                    placeholder2=None, feed2=None):
@@ -125,8 +192,6 @@ class Gan(object):
         batch_size = opts['tf_run_batch_size']
         batches_num = int(np.ceil((num_points + 0.) / batch_size))
         result = []
-        # logging.debug('Running op in batches...')
-        # with ProgressBar(opts['verbose'], batches_num) as bar:
         for idx in xrange(batches_num):
             if idx == batches_num - 1:
                 if feed2 is None:
@@ -155,7 +220,6 @@ class Gan(object):
                 # convert (n,) vector to (n,1) array
                 res = np.reshape(res, [-1, 1])
             result.append(res)
-        #         bar.bam()
         result = np.vstack(result)
         assert len(result) == num_points
         return result
@@ -174,9 +238,6 @@ class Gan(object):
 
     def _train_mixture_discriminator_internal(self, opts, fake_images):
         assert False, 'Gan base class has no mixture discriminator method defined.'
-
-    def _invert_points_internal(self, opts, images):
-        assert False, 'Gan base class has no invertion method defined.'
 
 class ToyGan(Gan):
     """A simple GAN implementation, suitable for toy datasets.
@@ -220,7 +281,7 @@ class ToyGan(Gan):
             h1 = tf.nn.relu(h1)
             h2 = ops.linear(opts, h1, 1, 'h2_lin')
 
-         return h2
+        return h2
 
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to GAN implementation.
@@ -230,11 +291,11 @@ class ToyGan(Gan):
 
         # Placeholders
         real_points_ph = tf.placeholder(
-            tf.float32, [None] + list(data_shape), name='real_points')
+            tf.float32, [None] + list(data_shape), name='real_points_ph')
         fake_points_ph = tf.placeholder(
-            tf.float32, [None] + list(data_shape), name='fake_points')
+            tf.float32, [None] + list(data_shape), name='fake_points_ph')
         noise_ph = tf.placeholder(
-            tf.float32, [None] + [opts['latent_space_dim']], name='noise')
+            tf.float32, [None] + [opts['latent_space_dim']], name='noise_ph')
 
         # Operations
         G = self.generator(opts, noise_ph)
@@ -300,37 +361,35 @@ class ToyGan(Gan):
 
         counter = 0
         logging.debug('Training GAN')
-        with ProgressBar(opts['verbose'], opts['gan_epoch_num']) as pbar:
-            for _epoch in xrange(opts["gan_epoch_num"]):
-                for _idx in TQDM(opts, xrange(batches_num),
-                                 desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
-                    data_ids = np.random.choice(train_size, opts['batch_size'],
-                                                replace=False, p=self._data_weights)
-                    batch_images = self._data.data[data_ids].astype(np.float)
-                    batch_noise = utils.generate_noise(opts, opts['batch_size'])
-                    # Update discriminator parameters
-                    for _iter in xrange(opts['d_steps']):
-                        _ = self._session.run(
-                            self._d_optim,
-                            feed_dict={self._real_points_ph: batch_images,
-                                       self._noise_ph: batch_noise})
-                    # Update generator parameters
-                    for _iter in xrange(opts['g_steps']):
-                        _ = self._session.run(
-                            self._g_optim, feed_dict={self._noise_ph: batch_noise})
-                    counter += 1
-                    if opts['verbose'] and counter % 100 == 0:
-                        metrics = Metrics()
-                        points_to_plot = self._run_batch(
-                            opts, self._G, self._noise_ph,
-                            self._noise_for_plots[0:300])
-                        metrics.make_plots(
-                            opts,
-                            counter,
-                            self._data.data[0:300],
-                            points_to_plot,
-                            prefix='gan_e%d_mb%d_' % (_epoch, _idx))
-                pbar.bam()
+        for _epoch in xrange(opts["gan_epoch_num"]):
+            for _idx in TQDM(opts, xrange(batches_num),
+                             desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
+                data_ids = np.random.choice(train_size, opts['batch_size'],
+                                            replace=False, p=self._data_weights)
+                batch_images = self._data.data[data_ids].astype(np.float)
+                batch_noise = utils.generate_noise(opts, opts['batch_size'])
+                # Update discriminator parameters
+                for _iter in xrange(opts['d_steps']):
+                    _ = self._session.run(
+                        self._d_optim,
+                        feed_dict={self._real_points_ph: batch_images,
+                                   self._noise_ph: batch_noise})
+                # Update generator parameters
+                for _iter in xrange(opts['g_steps']):
+                    _ = self._session.run(
+                        self._g_optim, feed_dict={self._noise_ph: batch_noise})
+                counter += 1
+                if opts['verbose'] and counter % 100 == 0:
+                    metrics = Metrics()
+                    points_to_plot = self._run_batch(
+                        opts, self._G, self._noise_ph,
+                        self._noise_for_plots[0:300])
+                    metrics.make_plots(
+                        opts,
+                        counter,
+                        self._data.data[0:300],
+                        points_to_plot,
+                        prefix='gan_e%d_mb%d_' % (_epoch, _idx))
 
 
 
@@ -351,20 +410,18 @@ class ToyGan(Gan):
 
         batches_num = self._data.num_points / opts['batch_size']
         logging.debug('Training a mixture discriminator')
-        with ProgressBar(opts['verbose'], opts['mixture_c_epoch_num']) as pbar:
-            for epoch in xrange(opts["mixture_c_epoch_num"]):
-                for idx in xrange(batches_num):
-                    ids = np.random.choice(len(fake_images), opts['batch_size'],
-                                           replace=False)
-                    batch_fake_images = fake_images[ids]
-                    ids = np.random.choice(self._data.num_points, opts['batch_size'],
-                                           replace=False)
-                    batch_real_images = self._data.data[ids]
-                    _ = self._session.run(
-                        self._c_optim,
-                        feed_dict={self._real_points_ph: batch_real_images,
-                                   self._fake_points_ph: batch_fake_images})
-                pbar.bam()
+        for epoch in xrange(opts["mixture_c_epoch_num"]):
+            for idx in xrange(batches_num):
+                ids = np.random.choice(len(fake_images), opts['batch_size'],
+                                       replace=False)
+                batch_fake_images = fake_images[ids]
+                ids = np.random.choice(self._data.num_points, opts['batch_size'],
+                                       replace=False)
+                batch_real_images = self._data.data[ids]
+                _ = self._session.run(
+                    self._c_optim,
+                    feed_dict={self._real_points_ph: batch_real_images,
+                               self._fake_points_ph: batch_fake_images})
 
         res = self._run_batch(
             opts, self._c_training,
@@ -396,11 +453,11 @@ class ToyUnrolledGan(ToyGan):
 
         # Placeholders
         real_points_ph = tf.placeholder(
-            tf.float32, [None] + list(data_shape), name='real_points')
+            tf.float32, [None] + list(data_shape), name='real_points_ph')
         fake_points_ph = tf.placeholder(
-            tf.float32, [None] + list(data_shape), name='fake_points')
+            tf.float32, [None] + list(data_shape), name='fake_points_ph')
         noise_ph = tf.placeholder(
-            tf.float32, [None] + [opts['latent_space_dim']], name='noise')
+            tf.float32, [None] + [opts['latent_space_dim']], name='noise_ph')
 
         # Operations
         G = self.generator(opts, noise_ph)
@@ -637,12 +694,12 @@ class ImageGan(Gan):
 
         # Placeholders
         real_points_ph = tf.placeholder(
-            tf.float32, [None] + list(data_shape), name='real_points')
+            tf.float32, [None] + list(data_shape), name='real_points_ph')
         fake_points_ph = tf.placeholder(
-            tf.float32, [None] + list(data_shape), name='fake_points')
+            tf.float32, [None] + list(data_shape), name='fake_points_ph')
         noise_ph = tf.placeholder(
-            tf.float32, [None] + [opts['latent_space_dim']], name='noise')
-        is_training_ph = tf.placeholder(tf.bool, name='is_train')
+            tf.float32, [None] + [opts['latent_space_dim']], name='noise_ph')
+        is_training_ph = tf.placeholder(tf.bool, name='is_train_ph')
 
 
         # Operations
@@ -737,49 +794,45 @@ class ImageGan(Gan):
 
         counter = 0
         logging.debug('Training GAN')
-        with ProgressBar(opts['verbose'], opts['gan_epoch_num']) as pbar:
-            for _epoch in xrange(opts["gan_epoch_num"]):
-                for _idx in xrange(batches_num):
-                    # logging.debug('Step %d of %d' % (_idx, batches_num ) )
-                    data_ids = np.random.choice(train_size, opts['batch_size'],
-                                                replace=False, p=self._data_weights)
-                    batch_images = self._data.data[data_ids].astype(np.float)
-                    batch_noise = utils.generate_noise(opts, opts['batch_size'])
-                    # Update discriminator parameters
-                    for _iter in xrange(opts['d_steps']):
-                        _ = self._session.run(
-                            self._d_optim,
-                            feed_dict={self._real_points_ph: batch_images,
-                                       self._noise_ph: batch_noise,
-                                       self._is_training_ph: True})
-                    # Update generator parameters
-                    for _iter in xrange(opts['g_steps']):
-                        _ = self._session.run(
-                            self._g_optim,
-                            feed_dict={self._noise_ph: batch_noise,
-                            self._is_training_ph: True})
-                    counter += 1
+        for _epoch in xrange(opts["gan_epoch_num"]):
+            for _idx in xrange(batches_num):
+                # logging.debug('Step %d of %d' % (_idx, batches_num ) )
+                data_ids = np.random.choice(train_size, opts['batch_size'],
+                                            replace=False, p=self._data_weights)
+                batch_images = self._data.data[data_ids].astype(np.float)
+                batch_noise = utils.generate_noise(opts, opts['batch_size'])
+                # Update discriminator parameters
+                for _iter in xrange(opts['d_steps']):
+                    _ = self._session.run(
+                        self._d_optim,
+                        feed_dict={self._real_points_ph: batch_images,
+                                   self._noise_ph: batch_noise,
+                                   self._is_training_ph: True})
+                # Update generator parameters
+                for _iter in xrange(opts['g_steps']):
+                    _ = self._session.run(
+                        self._g_optim,
+                        feed_dict={self._noise_ph: batch_noise,
+                        self._is_training_ph: True})
+                counter += 1
 
-                    if opts['verbose'] and counter % opts['plot_every'] == 0:
-                        logging.debug(
-                            'Epoch: %d/%d, batch:%d/%d' % \
-                            (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
-                        metrics = Metrics()
-                        points_to_plot = self._run_batch(
-                            opts, self._G, self._noise_ph,
-                            self._noise_for_plots[0:3 * 16],
-                            self._is_training_ph, False)
-                        metrics.make_plots(
-                            opts,
-                            counter,
-                            None,
-                            points_to_plot,
-                            prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
-                    if opts['early_stop'] > 0 and counter > opts['early_stop']:
-                        break
-                pbar.bam()
-
-
+                if opts['verbose'] and counter % opts['plot_every'] == 0:
+                    logging.debug(
+                        'Epoch: %d/%d, batch:%d/%d' % \
+                        (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
+                    metrics = Metrics()
+                    points_to_plot = self._run_batch(
+                        opts, self._G, self._noise_ph,
+                        self._noise_for_plots[0:3 * 16],
+                        self._is_training_ph, False)
+                    metrics.make_plots(
+                        opts,
+                        counter,
+                        None,
+                        points_to_plot,
+                        prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
+                if opts['early_stop'] > 0 and counter > opts['early_stop']:
+                    break
 
     def _sample_internal(self, opts, num):
         """Sample from the trained GAN model.
@@ -802,21 +855,19 @@ class ImageGan(Gan):
         logging.debug('Training a mixture discriminator')
         logging.debug('Using %d real points and %d fake ones' %\
                       (self._data.num_points, len(fake_images)))
-        with ProgressBar(opts['verbose'], opts['mixture_c_epoch_num']) as pbar:
-            for epoch in xrange(opts["mixture_c_epoch_num"]):
-                for idx in xrange(batches_num):
-                    ids = np.random.choice(len(fake_images), opts['batch_size'],
-                                           replace=False)
-                    batch_fake_images = fake_images[ids]
-                    ids = np.random.choice(self._data.num_points, opts['batch_size'],
-                                           replace=False)
-                    batch_real_images = self._data.data[ids]
-                    _ = self._session.run(
-                        self._c_optim,
-                        feed_dict={self._real_points_ph: batch_real_images,
-                                   self._fake_points_ph: batch_fake_images,
-                                   self._is_training_ph: True})
-                pbar.bam()
+        for epoch in xrange(opts["mixture_c_epoch_num"]):
+            for idx in xrange(batches_num):
+                ids = np.random.choice(len(fake_images), opts['batch_size'],
+                                       replace=False)
+                batch_fake_images = fake_images[ids]
+                ids = np.random.choice(self._data.num_points, opts['batch_size'],
+                                       replace=False)
+                batch_real_images = self._data.data[ids]
+                _ = self._session.run(
+                    self._c_optim,
+                    feed_dict={self._real_points_ph: batch_real_images,
+                               self._fake_points_ph: batch_fake_images,
+                               self._is_training_ph: True})
 
         # Evaluating trained classifier on real points
         res = self._run_batch(
@@ -858,13 +909,12 @@ class ImageUnrolledGan(ImageGan):
 
         # Placeholders
         real_points_ph = tf.placeholder(
-            tf.float32, [None] + list(data_shape), name='real_points')
+            tf.float32, [None] + list(data_shape), name='real_points_ph')
         fake_points_ph = tf.placeholder(
-            tf.float32, [None] + list(data_shape), name='fake_points')
+            tf.float32, [None] + list(data_shape), name='fake_points_ph')
         noise_ph = tf.placeholder(
-            tf.float32, [None] + [opts['latent_space_dim']], name='noise')
-        is_training_ph = tf.placeholder(tf.bool, name='is_train')
-
+            tf.float32, [None] + [opts['latent_space_dim']], name='noise_ph')
+        is_training_ph = tf.placeholder(tf.bool, name='is_train_ph')
 
         # Operations
         G = self.generator(opts, noise_ph, is_training_ph)
