@@ -78,7 +78,7 @@ class Metrics(object):
             return self._evaluate_vec(
                 opts, step, real_points,
                 fake_points, validation_fake_points, prefix='')
-        elif opts['dataset'] == '_circle_gmm':
+        elif opts['dataset'] == 'circle_gmm':
             return self._evaluate_vec(
                 opts, step, real_points,
                 fake_points, validation_fake_points, prefix='')

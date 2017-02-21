@@ -84,7 +84,7 @@ class ProgressBar(object):
 
 def TQDM(opts, myRange, *args, **kwargs):
     if opts['verbose']:
-        return tqdm(myRange, *args, ncols=80,  **kwargs)
+        return tqdm(myRange, *args, ncols=80, smoothing=0.,  **kwargs)
     else:
         return myRange
 
@@ -143,7 +143,8 @@ def debug_updated_weights(opts, steps, weights, data):
     """ Various debug plots for updated weights of training points.
 
     """
-    assert len(data) == len(weights), 'Length mismatch'
+    # assert len(data) == len(weights), 'Length mismatch'
+    assert data.num_points == len(weights), 'Length mismatch'
     ws_and_ids = sorted(zip(weights,
                         range(len(weights))))
     plt.figure()
