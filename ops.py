@@ -16,8 +16,7 @@ def batch_norm(opts, _input, is_train, reuse, scope):
     return tf.contrib.layers.batch_norm(
         _input, center=True, scale=True,
         epsilon=opts['batch_norm_eps'], decay=opts['batch_norm_decay'],
-        is_training=is_train, reuse=reuse, updates_collections=None,
-        scope=scope, fused=True)
+        is_training=is_train, reuse=reuse, updates_collections=None, scope=scope)
 
 def linear(opts, input_, output_dim, scope=None):
     """Fully connected linear layer.

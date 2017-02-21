@@ -445,6 +445,46 @@ class ToyUnrolledGan(ToyGan):
 
         Gan.__init__(self, opts, data, weights)
 
+    # Architecture used in unrolled gan paper
+    def generator(self, opts, noise, reuse=False):
+        """Generator function, suitable for simple toy experiments.
+
+        Args:
+            noise: [num_points, dim] array, where dim is dimensionality of the
+                latent noise space.
+        Returns:
+            [num_points, dim1, dim2, dim3] array, where the first coordinate
+            indexes the points, which all are of the shape (dim1, dim2, dim3).
+        """
+        output_shape = self._data.data_shape
+
+        with tf.variable_scope("GENERATOR", reuse=reuse):
+            h0 = ops.linear(opts, noise, 128, 'h0_lin')
+            h0 = tf.nn.tanh(h0)
+            h1 = ops.linear(opts, h0, 128, 'h1_lin')
+            h1 = tf.nn.tanh(h1)
+            h2 = ops.linear(opts, h1, np.prod(output_shape), 'h2_lin')
+            h2 = tf.reshape(h2, [-1] + list(output_shape))
+
+        return h2
+
+    def discriminator(self, opts, input_,
+                      prefix='DISCRIMINATOR', reuse=False):
+        """Discriminator function, suitable for simple toy experiments.
+
+        """
+        shape = input_.get_shape().as_list()
+        assert len(shape) > 0, 'No inputs to discriminate.'
+
+        with tf.variable_scope(prefix, reuse=reuse):
+            h0 = ops.linear(opts, input_, 128, 'h0_lin')
+            h0 = tf.nn.tanh(h0)
+            h1 = ops.linear(opts, h0, 128, 'h1_lin')
+            h1 = tf.nn.tanh(h1)
+            h2 = ops.linear(opts, h1, 1, 'h2_lin')
+
+        return h2
+
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to GAN implementation.
 
@@ -494,7 +534,14 @@ class ToyUnrolledGan(ToyGan):
                 d_logits_fake_cp, tf.zeros_like(d_logits_fake_cp)))
         d_loss_cp = d_loss_real_cp + d_loss_fake_cp
 
-        g_loss = - d_loss_cp
+        if opts['objective'] == 'JS':
+            g_loss = - d_loss_cp
+        elif opts['objective'] == 'JS_modified':
+            g_loss = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(
+                    d_logits_fake_cp, tf.ones_like(d_logits_fake_cp)))
+        else:
+            assert False, 'No objective %r implemented' % opts['objective']
 
         c_loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
@@ -512,11 +559,10 @@ class ToyUnrolledGan(ToyGan):
 
         # Ops to roll back the variable values of discriminator_cp
         # Will be executed each time before the unrolling steps
-        if opts['unrolling_steps'] > 0:
-            with tf.variable_scope('assign'):
-                roll_back = []
-                for var, var_cp in zip(d_vars, d_vars_cp):
-                    roll_back.append(tf.assign(var_cp, var))
+        with tf.variable_scope('assign'):
+            roll_back = []
+            for var, var_cp in zip(d_vars, d_vars_cp):
+                roll_back.append(tf.assign(var_cp, var))
 
         d_optim = ops.optimizer(opts, 'd').minimize(d_loss, var_list=d_vars)
         d_optim_cp = ops.optimizer(opts, 'd').minimize(
@@ -556,47 +602,43 @@ class ToyUnrolledGan(ToyGan):
 
         counter = 0
         logging.debug('Training GAN')
-        with ProgressBar(opts['verbose'], opts['gan_epoch_num']) as pbar:
-            for _epoch in xrange(opts["gan_epoch_num"]):
-                for _idx in TQDM(opts, xrange(batches_num),
-                                 desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
-                    data_ids = np.random.choice(train_size, opts['batch_size'],
-                                                replace=False, p=self._data_weights)
-                    batch_images = self._data.data[data_ids].astype(np.float)
-                    batch_noise = utils.generate_noise(opts, opts['batch_size'])
-                    # Update discriminator parameters
-                    for _iter in xrange(opts['d_steps']):
-                        _ = self._session.run(
-                            self._d_optim,
-                            feed_dict={self._real_points_ph: batch_images,
-                                       self._noise_ph: batch_noise})
-                    # Perform unrolling steps
-                    if opts['unrolling_steps'] > 0:
-                        # Roll back discriminator_cp's variables
-                        self._session.run(self._roll_back)
-                        # Unrolling steps
-                        for _iter in xrange(opts['unrolling_steps']):
-                            self._session.run(
-                                self._d_optim_cp,
-                                feed_dict={self._real_points_ph: batch_images,
-                                           self._noise_ph: batch_noise})
-                    # Update generator parameters
-                    for _iter in xrange(opts['g_steps']):
-                        _ = self._session.run(
-                            self._g_optim, feed_dict={self._noise_ph: batch_noise})
-                    counter += 1
-                    if opts['verbose'] and counter % 100 == 0:
-                        metrics = Metrics()
-                        points_to_plot = self._run_batch(
-                            opts, self._G, self._noise_ph,
-                            self._noise_for_plots[0:300])
-                        metrics.make_plots(
-                            opts,
-                            counter,
-                            self._data.data[0:300],
-                            points_to_plot,
-                            prefix='gan_e%d_mb%d_' % (_epoch, _idx))
-                pbar.bam()
+        for _epoch in xrange(opts["gan_epoch_num"]):
+            for _idx in TQDM(opts, xrange(batches_num),
+                             desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
+                data_ids = np.random.choice(train_size, opts['batch_size'],
+                                            replace=False, p=self._data_weights)
+                batch_images = self._data.data[data_ids].astype(np.float)
+                batch_noise = utils.generate_noise(opts, opts['batch_size'])
+                # Update discriminator parameters
+                for _iter in xrange(opts['d_steps']):
+                    _ = self._session.run(
+                        self._d_optim,
+                        feed_dict={self._real_points_ph: batch_images,
+                                   self._noise_ph: batch_noise})
+                # Roll back discriminator_cp's variables
+                self._session.run(self._roll_back)
+                # Unrolling steps
+                for _iter in xrange(opts['unrolling_steps']):
+                    self._session.run(
+                        self._d_optim_cp,
+                        feed_dict={self._real_points_ph: batch_images,
+                                   self._noise_ph: batch_noise})
+                # Update generator parameters
+                for _iter in xrange(opts['g_steps']):
+                    _ = self._session.run(
+                        self._g_optim, feed_dict={self._noise_ph: batch_noise})
+                counter += 1
+                if opts['verbose'] and counter % 100 == 0:
+                    metrics = Metrics()
+                    points_to_plot = self._run_batch(
+                        opts, self._G, self._noise_ph,
+                        self._noise_for_plots[0:300])
+                    metrics.make_plots(
+                        opts,
+                        counter,
+                        self._data.data[0:300],
+                        points_to_plot,
+                        prefix='gan_e%d_mb%d_' % (_epoch, _idx))
 
 
 
@@ -958,7 +1000,14 @@ class ImageUnrolledGan(ImageGan):
                 d_logits_fake_cp, tf.zeros_like(d_logits_fake_cp)))
         d_loss_cp = d_loss_real_cp + d_loss_fake_cp
 
-        g_loss = - d_loss_cp
+        if opts['objective'] == 'JS':
+            g_loss = - d_loss_cp
+        elif opts['objective'] == 'JS_modified':
+            g_loss = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(
+                    d_logits_fake_cp, tf.ones_like(d_logits_fake_cp)))
+        else:
+            assert False, 'No objective %r implemented' % opts['objective']
 
         c_loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
@@ -976,11 +1025,10 @@ class ImageUnrolledGan(ImageGan):
 
         # Ops to roll back the variable values of discriminator_cp
         # Will be executed each time before the unrolling steps
-        if opts['unrolling_steps'] > 0:
-            with tf.variable_scope('assign'):
-                roll_back = []
-                for var, var_cp in zip(d_vars, d_vars_cp):
-                    roll_back.append(tf.assign(var_cp, var))
+        with tf.variable_scope('assign'):
+            roll_back = []
+            for var, var_cp in zip(d_vars, d_vars_cp):
+                roll_back.append(tf.assign(var_cp, var))
 
         d_optim = ops.optimizer(opts, 'd').minimize(d_loss, var_list=d_vars)
         d_optim_cp = ops.optimizer(opts, 'd').minimize(
@@ -1039,98 +1087,52 @@ class ImageUnrolledGan(ImageGan):
 
         counter = 0
         logging.debug('Training GAN')
-        with ProgressBar(opts['verbose'], opts['gan_epoch_num']) as pbar:
-            for _epoch in xrange(opts["gan_epoch_num"]):
-                for _idx in TQDM(opts, xrange(batches_num),
-                                 desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
-                    # logging.debug('Step %d of %d' % (_idx, batches_num ) )
-                    data_ids = np.random.choice(train_size, opts['batch_size'],
-                                                replace=False, p=self._data_weights)
-                    batch_images = self._data.data[data_ids].astype(np.float)
-                    batch_noise = utils.generate_noise(opts, opts['batch_size'])
-                    # Update discriminator parameters
-                    for _iter in xrange(opts['d_steps']):
-                        _ = self._session.run(
-                            self._d_optim,
-                            feed_dict={self._real_points_ph: batch_images,
-                                       self._noise_ph: batch_noise,
-                                       self._is_training_ph: True})
-                    # Perform unrolling steps
-                    if opts['unrolling_steps'] > 0:
-                        # Roll back discriminator_cp's variables
-                        self._session.run(self._roll_back)
-                        # Unrolling steps
-                        for _iter in xrange(opts['unrolling_steps']):
-                            self._session.run(
-                                self._d_optim_cp,
-                                feed_dict={self._real_points_ph: batch_images,
-                                           self._noise_ph: batch_noise,
-                                           self._is_training_ph: True})
-                    # Update generator parameters
-                    for _iter in xrange(opts['g_steps']):
-                        _ = self._session.run(
-                            self._g_optim,
-                            feed_dict={self._noise_ph: batch_noise,
-                            self._is_training_ph: True})
-                    counter += 1
-
-                    if opts['verbose'] and counter % opts['plot_every'] == 0:
-                        # logging.debug(
-                        #     'Epoch: %d/%d, batch:%d/%d' % \
-                        #     (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
-                        metrics = Metrics()
-                        points_to_plot = self._run_batch(
-                            opts, self._G, self._noise_ph,
-                            self._noise_for_plots[0:16],
-                            self._is_training_ph, False)
-                        metrics.make_plots(
-                            opts,
-                            counter,
-                            None,
-                            points_to_plot,
-                            prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
-                    if opts['early_stop'] > 0 and counter > opts['early_stop']:
-                        break
-                pbar.bam()
-
-## SUPPRESS THIS PART ONCE is_training becomes a placeholder ####
-    def _sample_internal(self, opts, num):
-        """Sample from the trained GAN model.
-
-        """
-        noise = utils.generate_noise(opts, num)
-        sample = self._run_batch(
-            opts, self._G, self._noise_ph, noise)
-        #     self._is_training_ph, False)
-        # sample = self._session.run(
-        #     self._G, feed_dict={self._noise_ph: noise})
-        return sample
-
-    def _train_mixture_discriminator_internal(self, opts, fake_images):
-        """Train a classifier separating true data from points in fake_images.
-
-        """
-
-        batches_num = self._data.num_points / opts['batch_size']
-        logging.debug('Training a mixture discriminator')
-        with ProgressBar(opts['verbose'], opts['mixture_c_epoch_num']) as pbar:
-            for epoch in xrange(opts["mixture_c_epoch_num"]):
-                for idx in xrange(batches_num):
-                    ids = np.random.choice(len(fake_images), opts['batch_size'],
-                                           replace=False)
-                    batch_fake_images = fake_images[ids]
-                    ids = np.random.choice(self._data.num_points, opts['batch_size'],
-                                           replace=False)
-                    batch_real_images = self._data.data[ids]
+        for _epoch in xrange(opts["gan_epoch_num"]):
+            for _idx in TQDM(opts, xrange(batches_num),
+                             desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
+                # logging.debug('Step %d of %d' % (_idx, batches_num ) )
+                data_ids = np.random.choice(train_size, opts['batch_size'],
+                                            replace=False, p=self._data_weights)
+                batch_images = self._data.data[data_ids].astype(np.float)
+                batch_noise = utils.generate_noise(opts, opts['batch_size'])
+                # Update discriminator parameters
+                for _iter in xrange(opts['d_steps']):
                     _ = self._session.run(
-                        self._c_optim,
-                        feed_dict={self._real_points_ph: batch_real_images,
-                                   self._fake_points_ph: batch_fake_images})
-                                   # self._is_training_ph: True})
-                pbar.bam()
+                        self._d_optim,
+                        feed_dict={self._real_points_ph: batch_images,
+                                   self._noise_ph: batch_noise,
+                                   self._is_training_ph: True})
+                # Roll back discriminator_cp's variables
+                self._session.run(self._roll_back)
+                # Unrolling steps
+                for _iter in xrange(opts['unrolling_steps']):
+                    self._session.run(
+                        self._d_optim_cp,
+                        feed_dict={self._real_points_ph: batch_images,
+                                   self._noise_ph: batch_noise,
+                                   self._is_training_ph: True})
+                # Update generator parameters
+                for _iter in xrange(opts['g_steps']):
+                    _ = self._session.run(
+                        self._g_optim,
+                        feed_dict={self._noise_ph: batch_noise,
+                        self._is_training_ph: True})
+                counter += 1
 
-        res = self._run_batch(
-            opts, self._c_training,
-            self._real_points_ph, self._data.data,
-            self._is_training_ph, False)
-        return res, None
+                if opts['verbose'] and counter % opts['plot_every'] == 0:
+                    # logging.debug(
+                    #     'Epoch: %d/%d, batch:%d/%d' % \
+                    #     (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
+                    metrics = Metrics()
+                    points_to_plot = self._run_batch(
+                        opts, self._G, self._noise_ph,
+                        self._noise_for_plots[0:16],
+                        self._is_training_ph, False)
+                    metrics.make_plots(
+                        opts,
+                        counter,
+                        None,
+                        points_to_plot,
+                        prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
+                if opts['early_stop'] > 0 and counter > opts['early_stop']:
+                    break
