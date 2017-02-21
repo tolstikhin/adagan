@@ -78,6 +78,10 @@ class Metrics(object):
             return self._evaluate_vec(
                 opts, step, real_points,
                 fake_points, validation_fake_points, prefix='')
+        elif opts['dataset'] == '_circle_gmm':
+            return self._evaluate_vec(
+                opts, step, real_points,
+                fake_points, validation_fake_points, prefix='')
         elif opts['dataset'] == 'mnist':
             return self._evaluate_mnist(
                 opts, step, real_points,
@@ -393,11 +397,17 @@ class Metrics(object):
     def _make_plots_2d(self, opts, step, real_points,
                        fake_points, weights=None, prefix=''):
 
-        max_val = opts['gmm_max_val'] * 1.2
-        num_real_points = len(real_points)
-        num_fake_points = len(fake_points)
-        real = np.reshape(real_points, [num_real_points, 2])
-        fake = np.reshape(fake_points, [num_fake_points, 2])
+        max_val = opts['gmm_max_val'] * 2
+        if real_points is None:
+            real = np.zeros([0,2])
+        else:
+            num_real_points = len(real_points)
+            real = np.reshape(real_points, [num_real_points, 2])
+        if fake_points is None:
+            fake = np.zeros([0,2])
+        else:
+            num_fake_points = len(fake_points)
+            fake = np.reshape(fake_points, [num_fake_points, 2])
 
         # Plotting the sample
         plt.clf()
@@ -424,11 +434,17 @@ class Metrics(object):
     def _make_plots_1d(self, opts, step, real_points,
                        fake_points, weights=None, prefix=''):
 
-        max_val = opts['gmm_max_val'] * 2
-        num_real_points = len(real_points)
-        num_fake_points = len(fake_points)
-        real = np.reshape(real_points, [num_real_points, 1]).flatten()
-        fake = np.reshape(fake_points, [num_fake_points, 1]).flatten()
+        max_val = opts['gmm_max_val'] * 1.2
+        if real_points is None:
+            real = np.zeros([0,2])
+        else:
+            num_real_points = len(real_points)
+            real = np.reshape(real_points, [num_real_points, 1]).flatten()
+        if fake_points is None:
+            fake = np.zeros([0,2])
+        else:
+            num_fake_points = len(fake_points)
+            fake = np.reshape(fake_points, [num_fake_points, 1]).flatten()
 
         # Plotting the sample AND the weights simultaneously
         plt.clf()
