@@ -42,9 +42,10 @@ class Gan(object):
         self._c_loss = None # Loss of mixture discriminator
         self._c_training = None # Outputs of the mixture discriminator on data
         self._inv_loss = None
+        self._inv_loss_per_point = None
 
         # Variables
-        self._inv_input = None
+        self._inv_z = None
 
         # Optimizers
         self._g_optim = None
@@ -106,72 +107,91 @@ class Gan(object):
         with self._session.as_default(), self._session.graph.as_default():
             return self._train_mixture_discriminator_internal(opts, fake_images)
 
-    def invert_point(self, opts, image):
-        """Invert the learned generator function for image.
+    def invert_points(self, opts, images):
+        """Invert the learned generator function for every image in images.
 
         Args:
-            image: numpy array of shape data_shape.
+            images: numpy array of shape [num_points] + data_shape
 
         """
         assert self._trained, 'Can not invert, not trained yet.'
+        assert len(images) == opts['inverse_num'],\
+            'Currently inversion works only for fixed number of images'
         data_shape = self._data.data_shape
         with self._session.as_default(), self._session.graph.as_default():
             target_ph = self._inv_target_ph
-            params = self._inv_input
+            z = self._inv_z
             loss = self._inv_loss
+            loss_per_point = self._inv_loss_per_point
             optim = self._inv_optim
-            opt_vals = []
-            opt_params = []
-            for _start in xrange(5):
-                all_vars = tf.get_collection(
-                    tf.GraphKeys.TRAINABLE_VARIABLES, scope="inversion")
-                self._session.run(tf.variables_initializer(all_vars))
-                print 'Loss = ', loss.eval(feed_dict={target_ph:image})
-                prev_val = 1e4
-                check_every = 50
+
+            val_list = []
+            err_per_point_list = []
+            z_list = []
+            for _start in xrange(10):
+                inv_vars = tf.get_collection(
+                    tf.GraphKeys.GLOBAL_VARIABLES, scope="inversion")
+                # Initialize z and optimizer's variables randomly
+                self._session.run(tf.variables_initializer(inv_vars))
+                prev_val = 100.
+                check_every = 100
                 steps = 1
                 while True:
+                    # Stopping criterion: relative improvement of the maximal
+                    # per point mse gets smaller than a threshold
                     self._session.run(
-                        optim, feed_dict={target_ph:image})
+                        optim, feed_dict={target_ph:images})
                     if steps % check_every == 0:
-                        err = loss.eval(feed_dict={target_ph:image})
-                        logging.debug('Init %02d, steps %d, loss %f' %\
-                                      (_start, steps, err))
+                        err_per_point = loss_per_point.eval(
+                            feed_dict={target_ph:images})
+                        print err_per_point
+                        err_max = np.max(err_per_point)
+                        err = np.mean(err_per_point)
+                        logging.debug('Init %02d, steps %d, loss %f, max mse %f' %\
+                                      (_start, steps, err, err_max))
                         relative_improvement = np.abs(prev_val - err) / prev_val
-                        if relative_improvement < 1e-4:
-                            opt_vals.append(err)
-                            opt_params.append(self._session.run(params))
+                        if relative_improvement < 1e-4 or steps > 30000:
+                            val_list.append(err)
+                            err_per_point_list.append(err_per_point)
+                            z_list.append(self._session.run(z))
                             break
                         prev_val = err
                     steps += 1
-            best_id = sorted(zip(opt_vals, range(len(opt_vals))))[0][1]
-            opt_val = opt_vals[best_id]
-            opt_param = opt_params[best_id]
-            opt_image = self._G.eval(
-                feed_dict={self._noise_ph:opt_param,
-                           self._is_training_ph:False})[0]
+            # Choose the run where we got the best (i.e. minimal) maximal
+            # per point mse
+            best_id = sorted(zip(val_list, range(len(val_list))))[0][1]
+            best_err_per_point = err_per_point_list[best_id]
+            best_z = z_list[best_id]
+            best_reconstructions = self._G.eval(
+                feed_dict={self._noise_ph:best_z,
+                           self._is_training_ph:False})
 
-            return opt_image, opt_params[best_id], opt_vals[best_id]
+            return best_reconstructions, best_z, best_err_per_point
 
     def _add_inversion_ops(self, opts):
         data_shape = self._data.data_shape
         with tf.variable_scope("inversion"):
             target_ph = tf.placeholder(
-                tf.float32, data_shape, name='target_ph')
-            params = tf.get_variable(
-                "inverted", [1, opts['latent_space_dim']],
+                tf.float32, [None] + list(data_shape),
+                name='target_ph')
+            z = tf.get_variable(
+                "inverted", [opts['inverse_num'], opts['latent_space_dim']],
                 tf.float32, tf.random_normal_initializer(stddev=1.))
-        reconstructed_image = self.generator(
-            opts, params, is_training=False, reuse=True)
+        reconstructed_images = self.generator(
+            opts, z, is_training=False, reuse=True)
         with tf.variable_scope("inversion"):
-            loss = tf.reduce_mean(
-                tf.square(tf.sub(reconstructed_image, target_ph)))
-            optim = tf.train.MomentumOptimizer(0.1, 0.9)
-            optim = optim.minimize(loss, var_list=[params])
+            loss_per_point = tf.reduce_mean(
+                tf.square(tf.sub(reconstructed_images, target_ph)),
+                axis=[1,2,3])
+            loss = tf.reduce_mean(loss_per_point)
+            optim = tf.train.AdamOptimizer(0.005, 0.9)
+            optim = optim.minimize(loss, var_list=[z])
+
         self._inv_target_ph = target_ph
-        self._inv_input = params
+        self._inv_z = z
         self._inv_optim = optim
         self._inv_loss = loss
+        self._inv_loss_per_point = loss_per_point
 
     def _run_batch(self, opts, operation, placeholder, feed,
                    placeholder2=None, feed2=None):

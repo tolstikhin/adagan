@@ -34,6 +34,11 @@ class AdaGan(object):
         self._mixture_weights = np.zeros(0)
         self._beta_heur = opts['beta_heur']
         self._saver = ArraySaver('disk', workdir=opts['work_dir'])
+        if opts["inverse_metric"]:
+            inv_num = opts['inverse_num']
+            self._invert_point_ids = np.random.choice(
+                data.num_points, inv_num, replace=False)
+            self._invert_losses = np.zeros((self.steps_total, inv_num))
 
     def make_step(self, opts, data):
         """Makes one AdaGAN step and takes care of all necessary updates.
@@ -79,19 +84,25 @@ class AdaGan(object):
             self._saver.save('samples{:02d}.npy'.format(self.steps_made), sample)
             metrics = Metrics()
             metrics.make_plots(opts, self.steps_made, data.data,
-                sample[:min(len(sample), 4 * 16)], prefix='component_')
+                sample[:min(len(sample), 6 * 16)], prefix='component_')
             #3. Invert the generator, while we still have the graph alive.
             if opts["inverse_metric"]:
-                ids = np.random.choice(data.num_points, 100, replace=False)
-                counter = 0
-                for _id in ids:
-                    image_hat, z, err = gan.invert_point(opts, data.data[_id])
-                    metrics.make_plots(opts, self.steps_made, data.data,
-                                       np.array([image_hat, data.data[_id]]),
-                                       prefix='inverted%d_' % counter)
-                    logging.debug('Inverted %d with mse=%.5f' % (counter, err))
-                    counter += 1
-
+                logging.debug('Inverting data points...')
+                ids = self._invert_point_ids
+                images_hat, z, err_per_point = gan.invert_points(
+                    opts, data.data[ids])
+                plot_pics = []
+                for _id in xrange(min(16 * 8, len(ids))):
+                    plot_pics.append(images_hat[_id])
+                    plot_pics.append(data.data[ids[_id]])
+                metrics.make_plots(
+                    opts, self.steps_made, data.data,
+                    np.array(plot_pics),
+                    prefix='inverted_')
+                logging.debug('Inverted with mse=%.5f, std=%.5f' %\
+                        (np.mean(err_per_point), np.std(err_per_point)))
+                self._invert_losses[self.steps_made] = err_per_point
+                logging.debug('Inverting done.')
 
         if self.steps_made == 0:
             self._mixture_weights = np.array([beta])
