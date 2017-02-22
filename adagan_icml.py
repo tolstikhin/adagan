@@ -8,6 +8,7 @@ import os
 import argparse
 import logging
 import tensorflow as tf
+import numpy as np
 from datahandler import DataHandler
 from adagan import AdaGan
 from metrics import Metrics
@@ -40,10 +41,10 @@ def main():
     opts['gmm_max_val'] = 15.
     opts['toy_dataset_size'] = 10000
     opts['toy_dataset_dim'] = 2
-    opts['mnist3_dataset_size'] = 256 # 64 * 2500
+    opts['mnist3_dataset_size'] = 2 * 64 # 64 * 2500
     opts['mnist3_to_channels'] = False # Hide 3 digits of MNIST to channels
     opts['input_normalize_sym'] = True # Normalize data to [-1, 1]
-    opts['adagan_steps_total'] = 1
+    opts['adagan_steps_total'] = 3
     opts['samples_per_component'] = 100 # 50000
     opts['work_dir'] = FLAGS.workdir
     opts['is_bagging'] = FLAGS.is_bagging
@@ -79,6 +80,7 @@ def main():
     opts["eval_points_num"] = 100 # 25600
     opts['digit_classification_threshold'] = 0.999
     opts['inverse_metric'] = True # Use metric from the Unrolled GAN paper?
+    opts['inverse_num'] = 2 # Number of real points to inverse.
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')
@@ -113,8 +115,10 @@ def main():
                 fake_points, more_fake_points, prefix='')
         else:
             metrics.make_plots(opts, step, data.data,
-                    fake_points[:4 * 16], adagan._data_weights)
+                    fake_points[:6 * 16], adagan._data_weights)
             logging.debug('Evaluating results')
+            l2 = np.min(adagan._invert_losses[:step + 1], axis=0)
+            logging.debug('MSE=%.5f, STD=%.5f' % (np.mean(l2), np.std(l2)))
             res = metrics.evaluate(
                 opts, step, data.data[:500],
                 fake_points, more_fake_points, prefix='')
