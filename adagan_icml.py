@@ -80,7 +80,7 @@ def main():
     opts["eval_points_num"] = 100 # 25600
     opts['digit_classification_threshold'] = 0.999
     opts['inverse_metric'] = True # Use metric from the Unrolled GAN paper?
-    opts['inverse_num'] = 2 # Number of real points to inverse.
+    opts['inverse_num'] = 1 # Number of real points to inverse.
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')

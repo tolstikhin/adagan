@@ -146,10 +146,6 @@ def debug_updated_weights(opts, steps, weights, data):
     assert data.num_points == len(weights), 'Length mismatch'
     ws_and_ids = sorted(zip(weights,
                         range(len(weights))))
-    plt.figure()
-    ax1 = plt.subplot(211)
-    ax1.set_title('Weights over data points')
-    plt.scatter(range(len(weights)), weights, s=30)
     num_plot = 6 * 16
     if num_plot > len(weights):
         return
@@ -165,6 +161,11 @@ def debug_updated_weights(opts, steps, weights, data):
     metrics.make_plots(opts, steps,
                        None, plot_points,
                        prefix='d_most_')
+    plt.clf()
+    ax1 = plt.subplot(211)
+    ax1.set_title('Weights over data points')
+    plt.plot(range(len(weights)), sorted(weights))
+    plt.axis([0, len(weights), 0., np.max(weights)])
     if data.labels is not None:
         all_labels = np.unique(data.labels)
         w_per_label = -1. * np.ones(len(all_labels))
@@ -174,6 +175,6 @@ def debug_updated_weights(opts, steps, weights, data):
         ax2 = plt.subplot(212)
         ax2.set_title('Weights over labels')
         plt.scatter(range(len(all_labels)), w_per_label, s=30)
-        filename = 'data_w{:02d}.png'.format(steps)
-        create_dir(opts['work_dir'])
-        plt.savefig(os.path.join(opts["work_dir"], filename))
+    filename = 'data_w{:02d}.png'.format(steps)
+    create_dir(opts['work_dir'])
+    plt.savefig(os.path.join(opts["work_dir"], filename))
