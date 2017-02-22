@@ -57,6 +57,8 @@ class Gan(object):
             logging.debug('Building the graph...')
             self._build_model_internal(opts)
             if opts['inverse_metric']:
+                assert opts['dataset'] in ['mnist', 'mnist3'],\
+                    'Invertion currently supported only for MNIST and MNIST3'
                 logging.debug('Adding inversion ops to the graph...')
                 self._add_inversion_ops(opts)
 
@@ -144,7 +146,6 @@ class Gan(object):
                     if steps % check_every == 0:
                         err_per_point = loss_per_point.eval(
                             feed_dict={target_ph:images})
-                        print err_per_point
                         err_max = np.max(err_per_point)
                         err = np.mean(err_per_point)
                         logging.debug('Init %02d, steps %d, loss %f, max mse %f' %\
@@ -382,8 +383,7 @@ class ToyGan(Gan):
         counter = 0
         logging.debug('Training GAN')
         for _epoch in xrange(opts["gan_epoch_num"]):
-            for _idx in TQDM(opts, xrange(batches_num),
-                             desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
+            for _idx in xrange(batches_num):
                 data_ids = np.random.choice(train_size, opts['batch_size'],
                                             replace=False, p=self._data_weights)
                 batch_images = self._data.data[data_ids].astype(np.float)

@@ -76,6 +76,7 @@ class DataHandler(object):
 
         """
 
+        logging.debug('Loading GMM dataset...')
         # First we choose parameters of gmm and thus seed
         modes_num = opts["gmm_modes_num"]
         np.random.seed(opts["random_seed"])
@@ -108,6 +109,8 @@ class DataHandler(object):
         self.data_shape = (opts['toy_dataset_dim'], 1, 1)
         self.data = X
         self.num_points = len(X)
+
+        logging.debug('Loading GMM dataset done!')
 
     def _load_mnist(self, opts):
         """Load data from MNIST files.
