@@ -1,0 +1,11 @@
+# ignore all .py~ files
+*.py~
+
+# ignore all .pyc files
+*.pyc
+
+# ignore all results repositories
+results*/
+
+# ignore .vimtmp directory
+.vimtmp
