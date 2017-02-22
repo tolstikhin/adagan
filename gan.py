@@ -128,7 +128,7 @@ class Gan(object):
             val_list = []
             err_per_point_list = []
             z_list = []
-            for _start in xrange(10):
+            for _start in xrange(5):
                 inv_vars = tf.get_collection(
                     tf.GraphKeys.GLOBAL_VARIABLES, scope="inversion")
                 # Initialize z and optimizer's variables randomly
@@ -150,7 +150,7 @@ class Gan(object):
                         logging.debug('Init %02d, steps %d, loss %f, max mse %f' %\
                                       (_start, steps, err, err_max))
                         relative_improvement = np.abs(prev_val - err) / prev_val
-                        if relative_improvement < 1e-4 or steps > 30000:
+                        if relative_improvement < 1e-3 or steps > 10000:
                             val_list.append(err)
                             err_per_point_list.append(err_per_point)
                             z_list.append(self._session.run(z))
@@ -184,7 +184,7 @@ class Gan(object):
                 tf.square(tf.sub(reconstructed_images, target_ph)),
                 axis=[1,2,3])
             loss = tf.reduce_mean(loss_per_point)
-            optim = tf.train.AdamOptimizer(0.005, 0.9)
+            optim = tf.train.AdamOptimizer(0.01, 0.9)
             optim = optim.minimize(loss, var_list=[z])
 
         self._inv_target_ph = target_ph

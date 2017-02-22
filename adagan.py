@@ -102,6 +102,8 @@ class AdaGan(object):
                 logging.debug('Inverted with mse=%.5f, std=%.5f' %\
                         (np.mean(err_per_point), np.std(err_per_point)))
                 self._invert_losses[self.steps_made] = err_per_point
+                self._saver.save(
+                    'mse{:02d}.npy'.format(self.steps_made), err_per_point)
                 logging.debug('Inverting done.')
 
         if self.steps_made == 0:
