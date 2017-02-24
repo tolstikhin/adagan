@@ -1,3 +1,7 @@
+# Copyright 2017 Max Planck Society
+# Distributed under the BSD-3 Software license,
+# (See accompanying file ./LICENSE.txt or copy at
+# https://opensource.org/licenses/BSD-3-Clause)
 """Class responsible for vizualizing and evaluating trained models.
 
 """
