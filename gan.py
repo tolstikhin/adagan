@@ -409,7 +409,7 @@ class ToyGan(Gan):
                         counter,
                         self._data.data[0:300],
                         points_to_plot,
-                        prefix='gan_e%d_mb%d_' % (_epoch, _idx))
+                        prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
 
 
 
@@ -648,7 +648,7 @@ class ToyUnrolledGan(ToyGan):
                     _ = self._session.run(
                         self._g_optim, feed_dict={self._noise_ph: batch_noise})
                 counter += 1
-                if opts['verbose'] and counter % 100 == 0:
+                if opts['verbose'] and counter % opts['plot_every'] == 0:
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts, self._G, self._noise_ph,
@@ -658,9 +658,7 @@ class ToyUnrolledGan(ToyGan):
                         counter,
                         self._data.data[0:300],
                         points_to_plot,
-                        prefix='gan_e%d_mb%d_' % (_epoch, _idx))
-
-
+                        prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
 
 class ImageGan(Gan):
     """A simple GAN implementation, suitable for pictures.
