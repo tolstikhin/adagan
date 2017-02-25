@@ -123,11 +123,9 @@ class Gan(object):
         assert self._trained, 'Can not invert, not trained yet.'
         assert len(images) == opts['inverse_num'],\
             'Currently inversion works only for fixed number of images'
-        data_shape = self._data.data_shape
         with self._session.as_default(), self._session.graph.as_default():
             target_ph = self._inv_target_ph
             z = self._inv_z
-            loss = self._inv_loss
             loss_per_point = self._inv_loss_per_point
             optim = self._inv_optim
             norms = self._inv_norms
@@ -191,7 +189,7 @@ class Gan(object):
         with tf.variable_scope("inversion"):
             loss_per_point = tf.reduce_mean(
                 tf.square(tf.sub(reconstructed_images, target_ph)),
-                axis=[1,2,3])
+                axis=[1, 2, 3])
             loss = tf.reduce_mean(loss_per_point)
             norms = tf.reduce_sum(tf.square(z), axis=[1])
             optim = tf.train.AdamOptimizer(0.01, 0.9)
@@ -459,14 +457,14 @@ class ToyGan(Gan):
         return res, None
 
 
-class ToyUnrolledGan(ToyGan):
+class ToyUnrolledGan(Gan):
     """A simple GAN implementation, suitable for toy datasets.
 
     """
 
     def __init__(self, opts, data, weights):
 
-        # Losses of the copied discriminator network 
+        # Losses of the copied discriminator network
         self._d_loss_cp = None
         self._d_optim_cp = None
         # Rolling back ops (assign variable values fo true
@@ -596,8 +594,8 @@ class ToyUnrolledGan(ToyGan):
 
         d_optim = ops.optimizer(opts, 'd').minimize(d_loss, var_list=d_vars)
         d_optim_cp = ops.optimizer(opts, 'd').minimize(
-                                                       d_loss_cp,
-                                                       var_list=d_vars_cp)
+           d_loss_cp,
+           var_list=d_vars_cp)
         c_optim = ops.optimizer(opts).minimize(c_loss, var_list=c_vars)
         g_optim = ops.optimizer(opts, 'g').minimize(g_loss, var_list=g_vars)
 
@@ -634,7 +632,8 @@ class ToyUnrolledGan(ToyGan):
         logging.debug('Training GAN')
         for _epoch in xrange(opts["gan_epoch_num"]):
             for _idx in TQDM(opts, xrange(batches_num),
-                             desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
+                             desc='Epoch %2d/%2d' %\
+                             (_epoch+1, opts["gan_epoch_num"])):
                 data_ids = np.random.choice(train_size, opts['batch_size'],
                                             replace=False, p=self._data_weights)
                 batch_images = self._data.data[data_ids].astype(np.float)
@@ -717,7 +716,7 @@ class ImageGan(Gan):
             # h1 = tf.nn.relu(h1)
             h1 = ops.lrelu(h1)
             _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
-            # for 28 x 28 does 14 x 14 --> 28 x 28 
+            # for 28 x 28 does 14 x 14 --> 28 x 28
             h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
             h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
             # h2 = tf.nn.relu(h2)
@@ -824,7 +823,7 @@ class ImageGan(Gan):
         # def debug_grads(grad, var):
         #     _grad =  tf.Print(
         #         grad, # grads_and_vars,
-        #         [tf.global_norm([grad])], # tf.global_norm([grad for (grad, var) in grads_and_vars]).get_shape(),
+        #         [tf.global_norm([grad])], 
         #         'Global grad norm of %s: ' % var.name)
         #     return _grad, var
 
@@ -883,7 +882,7 @@ class ImageGan(Gan):
                     _ = self._session.run(
                         self._g_optim,
                         feed_dict={self._noise_ph: batch_noise,
-                        self._is_training_ph: True})
+                                   self._is_training_ph: True})
                 counter += 1
 
                 if opts['verbose'] and counter % opts['plot_every'] == 0:
@@ -960,16 +959,14 @@ class ImageUnrolledGan(ImageGan):
 
     def __init__(self, opts, data, weights):
 
-        # One more placeholder for batch norm
-        self._is_training_ph = None
-        # Losses of the copied discriminator network 
+        # Losses of the copied discriminator network
         self._d_loss_cp = None
         self._d_optim_cp = None
         # Rolling back ops (assign variable values fo true
         # to copied discriminator network)
         self._roll_back = None
 
-        Gan.__init__(self, opts, data, weights)
+        ImageGan.__init__(self, opts, data, weights)
 
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to GAN implementation.
@@ -1060,8 +1057,7 @@ class ImageUnrolledGan(ImageGan):
 
         d_optim = ops.optimizer(opts, 'd').minimize(d_loss, var_list=d_vars)
         d_optim_cp = ops.optimizer(opts, 'd').minimize(
-                                                       d_loss_cp,
-                                                       var_list=d_vars_cp)
+           d_loss_cp, var_list=d_vars_cp)
         c_optim = ops.optimizer(opts).minimize(c_loss, var_list=c_vars)
         g_optim = ops.optimizer(opts, 'g').minimize(g_loss, var_list=g_vars)
 
@@ -1073,7 +1069,7 @@ class ImageUnrolledGan(ImageGan):
         # def debug_grads(grad, var):
         #     _grad =  tf.Print(
         #         grad, # grads_and_vars,
-        #         [tf.global_norm([grad])], # tf.global_norm([grad for (grad, var) in grads_and_vars]).get_shape(),
+        #         [tf.global_norm([grad])], 
         #         'Global grad norm of %s: ' % var.name)
         #     return _grad, var
 
@@ -1117,7 +1113,8 @@ class ImageUnrolledGan(ImageGan):
         logging.debug('Training GAN')
         for _epoch in xrange(opts["gan_epoch_num"]):
             for _idx in TQDM(opts, xrange(batches_num),
-                             desc='Epoch %2d/%2d'% (_epoch+1,opts["gan_epoch_num"])):
+                             desc='Epoch %2d/%2d' %\
+                             (_epoch + 1, opts["gan_epoch_num"])):
                 # logging.debug('Step %d of %d' % (_idx, batches_num ) )
                 data_ids = np.random.choice(train_size, opts['batch_size'],
                                             replace=False, p=self._data_weights)
@@ -1144,7 +1141,7 @@ class ImageUnrolledGan(ImageGan):
                     _ = self._session.run(
                         self._g_optim,
                         feed_dict={self._noise_ph: batch_noise,
-                        self._is_training_ph: True})
+                                   self._is_training_ph: True})
                 counter += 1
 
                 if opts['verbose'] and counter % opts['plot_every'] == 0:
