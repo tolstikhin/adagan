@@ -93,7 +93,7 @@ class AdaGan(object):
             if opts["inverse_metric"]:
                 logging.debug('Inverting data points...')
                 ids = self._invert_point_ids
-                images_hat, z, err_per_point = gan.invert_points(
+                images_hat, z, err_per_point, norms = gan.invert_points(
                     opts, data.data[ids])
                 plot_pics = []
                 for _id in xrange(min(16 * 8, len(ids))):
@@ -108,6 +108,8 @@ class AdaGan(object):
                 self._invert_losses[self.steps_made] = err_per_point
                 self._saver.save(
                     'mse{:02d}.npy'.format(self.steps_made), err_per_point)
+                self._saver.save(
+                    'mse_norms{:02d}.npy'.format(self.steps_made), norms)
                 logging.debug('Inverting done.')
 
         if self.steps_made == 0:

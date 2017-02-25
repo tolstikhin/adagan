@@ -130,10 +130,12 @@ class Gan(object):
             loss = self._inv_loss
             loss_per_point = self._inv_loss_per_point
             optim = self._inv_optim
+            norms = self._inv_norms
 
             val_list = []
             err_per_point_list = []
             z_list = []
+            norms_list = []
             for _start in xrange(5):
                 inv_vars = tf.get_collection(
                     tf.GraphKeys.GLOBAL_VARIABLES, scope="inversion")
@@ -159,6 +161,7 @@ class Gan(object):
                             val_list.append(err)
                             err_per_point_list.append(err_per_point)
                             z_list.append(self._session.run(z))
+                            norms_list.append(self._session.run(norms))
                             break
                         prev_val = err
                     steps += 1
@@ -167,11 +170,12 @@ class Gan(object):
             best_id = sorted(zip(val_list, range(len(val_list))))[0][1]
             best_err_per_point = err_per_point_list[best_id]
             best_z = z_list[best_id]
+            best_norms = norms_list[best_id]
             best_reconstructions = self._G.eval(
                 feed_dict={self._noise_ph:best_z,
                            self._is_training_ph:False})
 
-            return best_reconstructions, best_z, best_err_per_point
+            return best_reconstructions, best_z, best_err_per_point, best_norms
 
     def _add_inversion_ops(self, opts):
         data_shape = self._data.data_shape
@@ -189,6 +193,7 @@ class Gan(object):
                 tf.square(tf.sub(reconstructed_images, target_ph)),
                 axis=[1,2,3])
             loss = tf.reduce_mean(loss_per_point)
+            norms = tf.reduce_sum(tf.square(z), axis=[1])
             optim = tf.train.AdamOptimizer(0.01, 0.9)
             optim = optim.minimize(loss, var_list=[z])
 
@@ -197,6 +202,7 @@ class Gan(object):
         self._inv_optim = optim
         self._inv_loss = loss
         self._inv_loss_per_point = loss_per_point
+        self._inv_norms = norms
 
     def _run_batch(self, opts, operation, placeholder, feed,
                    placeholder2=None, feed2=None):
