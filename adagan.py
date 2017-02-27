@@ -10,7 +10,6 @@ import logging
 import numpy as np
 import gan as GAN
 from utils import ArraySaver
-from datahandler import DataHandler
 from metrics import Metrics
 import utils
 
@@ -88,7 +87,8 @@ class AdaGan(object):
             self._saver.save('samples{:02d}.npy'.format(self.steps_made), sample)
             metrics = Metrics()
             metrics.make_plots(opts, self.steps_made, data.data,
-                sample[:min(len(sample), 6 * 16)], prefix='component_')
+                               sample[:min(len(sample), 6 * 16)],
+                               prefix='component_')
             #3. Invert the generator, while we still have the graph alive.
             if opts["inverse_metric"]:
                 logging.debug('Inverting data points...')
