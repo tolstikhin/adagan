@@ -76,6 +76,7 @@ class AdaGan(object):
         """
 
         with self._gan_class(opts, data, self._data_weights) as gan:
+
             beta = self._next_mixture_weight(opts)
             if self.steps_made > 0 and not opts['is_bagging']:
                 # We first need to update importance weights
@@ -83,6 +84,7 @@ class AdaGan(object):
                 # (a) We are running the very first GAN instance
                 # (b) We are bagging, in which case the weughts are always uniform
                 self._update_data_weights(opts, gan, beta, data)
+                gan._data_weights = np.copy(self._data_weights)
 
             # Train GAN
             gan.train(opts)
