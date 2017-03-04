@@ -30,7 +30,7 @@ class Gan(object):
         self._session = tf.Session()
         self._trained = False
         self._data = data
-        self._data_weights = weights
+        self._data_weights = np.copy(weights)
         # Latent noise sampled ones to apply G while training
         self._noise_for_plots = utils.generate_noise(opts, 500)
         # Placeholders
@@ -61,8 +61,8 @@ class Gan(object):
             logging.debug('Building the graph...')
             self._build_model_internal(opts)
             if opts['inverse_metric']:
-                assert opts['dataset'] in ['mnist', 'mnist3'],\
-                    'Invertion currently supported only for MNIST and MNIST3'
+                assert opts['dataset'] in ('mnist', 'mnist3', 'guitars'),\
+                    'Invertion currently supported only for mnist, mnist3, guitars'
                 logging.debug('Adding inversion ops to the graph...')
                 self._add_inversion_ops(opts)
 
@@ -407,15 +407,17 @@ class ToyGan(Gan):
                     _ = self._session.run(
                         self._g_optim, feed_dict={self._noise_ph: batch_noise})
                 counter += 1
-                if opts['verbose'] and counter % 100 == 0:
+                if opts['verbose'] and counter % opts['plot_every'] == 0:
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts, self._G, self._noise_ph,
                         self._noise_for_plots[0:300])
+                    data_ids = np.random.choice(train_size, 300,
+                                                replace=False,
+                                                p=self._data_weights)
                     metrics.make_plots(
-                        opts,
-                        counter,
-                        self._data.data[0:300],
+                        opts, counter,
+                        self._data.data[data_ids],
                         points_to_plot,
                         prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
 
@@ -457,7 +459,7 @@ class ToyGan(Gan):
         return res, None
 
 
-class ToyUnrolledGan(Gan):
+class ToyUnrolledGan(ToyGan):
     """A simple GAN implementation, suitable for toy datasets.
 
     """
@@ -662,10 +664,12 @@ class ToyUnrolledGan(Gan):
                     points_to_plot = self._run_batch(
                         opts, self._G, self._noise_ph,
                         self._noise_for_plots[0:300])
+                    data_ids = np.random.choice(train_size, 300,
+                                                replace=False,
+                                                p=self._data_weights)
                     metrics.make_plots(
-                        opts,
-                        counter,
-                        self._data.data[0:300],
+                        opts, counter,
+                        self._data.data[data_ids],
                         points_to_plot,
                         prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
 

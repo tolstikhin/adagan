@@ -58,7 +58,7 @@ class Metrics(object):
                                     fake_points, weights, prefix)
             else:
                 logging.debug('Can not plot, sorry...')
-        elif opts['dataset'] in ('mnist', 'mnist3'):
+        elif opts['dataset'] in ('mnist', 'mnist3', 'guitars'):
             self._make_plots_pics(opts, step, real_points,
                                   fake_points, weights, prefix)
         else:
@@ -263,7 +263,7 @@ class Metrics(object):
         return (JS, C, C_actual, conf)
 
     def _evaluate_mnist3(self, opts, step, real_points,
-                        fake_points, validation_fake_points, prefix=''):
+                         fake_points, validation_fake_points, prefix=''):
         """ The model is covering as many modes and as uniformly as possible.
 
         Classify every picture in fake_points with a pre-trained MNIST
@@ -403,12 +403,12 @@ class Metrics(object):
 
         max_val = opts['gmm_max_val'] * 2
         if real_points is None:
-            real = np.zeros([0,2])
+            real = np.zeros([0, 2])
         else:
             num_real_points = len(real_points)
             real = np.reshape(real_points, [num_real_points, 2])
         if fake_points is None:
-            fake = np.zeros([0,2])
+            fake = np.zeros([0, 2])
         else:
             num_fake_points = len(fake_points)
             fake = np.reshape(fake_points, [num_fake_points, 2])
@@ -440,12 +440,12 @@ class Metrics(object):
 
         max_val = opts['gmm_max_val'] * 1.2
         if real_points is None:
-            real = np.zeros([0,2])
+            real = np.zeros([0, 2])
         else:
             num_real_points = len(real_points)
             real = np.reshape(real_points, [num_real_points, 1]).flatten()
         if fake_points is None:
-            fake = np.zeros([0,2])
+            fake = np.zeros([0, 2])
         else:
             num_fake_points = len(fake_points)
             fake = np.reshape(fake_points, [num_fake_points, 1]).flatten()
@@ -473,7 +473,7 @@ class Metrics(object):
     def _make_plots_pics(self, opts, step, real_points,
                          fake_points, weights=None, prefix=''):
         pics = []
-        if opts['dataset'] == 'mnist' or opts['dataset'] == 'mnist3':
+        if opts['dataset'] in ('mnist', 'mnist3', 'guitars'):
             if opts['input_normalize_sym']:
                 if real_points is not None:
                     real_points = real_points / 2. + 0.5
@@ -499,7 +499,10 @@ class Metrics(object):
                     pics.append(1. - np.concatenate(
                         [dig1, dig2, dig3], axis=1))
             else:
-                pics.append(1. - fake_points[idx, :, :, :])
+                if opts['dataset'] == 'mnist':
+                    pics.append(1. - fake_points[idx, :, :, :])
+                else:
+                    pics.append(fake_points[idx, :, :, :])
         # Figuring out an arrangement
         max_rows = 16
         num_cols = int(np.ceil(1. * num_pics / max_rows))
@@ -513,7 +516,8 @@ class Metrics(object):
             pics = np.array(pics)
             image = np.concatenate(np.split(pics, num_cols), axis=2)
             image = np.concatenate(image, axis=0)
-
+        if opts['dataset'] == 'guitars':
+            plt.figure(figsize=(30,30))
         plt.clf()
         if fake_points[0].shape[-1] == 1:
             image = image[:, :, 0]
