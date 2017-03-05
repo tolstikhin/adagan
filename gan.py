@@ -188,7 +188,7 @@ class Gan(object):
             opts, z, is_training=False, reuse=True)
         with tf.variable_scope("inversion"):
             loss_per_point = tf.reduce_mean(
-                tf.square(tf.sub(reconstructed_images, target_ph)),
+                tf.square(tf.subtract(reconstructed_images, target_ph)),
                 axis=[1, 2, 3])
             loss = tf.reduce_mean(loss_per_point)
             norms = tf.reduce_sum(tf.square(z), axis=[1])
