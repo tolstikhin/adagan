@@ -341,22 +341,22 @@ class ToyGan(Gan):
 
         d_loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_real, tf.ones_like(d_logits_real)))
+                logits=d_logits_real, labels=tf.ones_like(d_logits_real)))
         d_loss_fake = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_fake, tf.zeros_like(d_logits_fake)))
+                logits=d_logits_fake, labels=tf.zeros_like(d_logits_fake)))
         d_loss = d_loss_real + d_loss_fake
 
         g_loss = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_fake, tf.ones_like(d_logits_fake)))
+                logits=d_logits_fake, labels=tf.ones_like(d_logits_fake)))
 
         c_loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                c_logits_real, tf.ones_like(c_logits_real)))
+                logits=c_logits_real, labels=tf.ones_like(c_logits_real)))
         c_loss_fake = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                c_logits_fake, tf.zeros_like(c_logits_fake)))
+                logits=c_logits_fake, labels=tf.zeros_like(c_logits_fake)))
         c_loss = c_loss_real + c_loss_fake
 
         t_vars = tf.trainable_variables()
@@ -548,18 +548,19 @@ class ToyUnrolledGan(Gan):
 
         d_loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_real, tf.ones_like(d_logits_real)))
+                logits=d_logits_real, labels=tf.ones_like(d_logits_real)))
         d_loss_fake = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_fake, tf.zeros_like(d_logits_fake)))
+                logits=d_logits_fake, labels=tf.zeros_like(d_logits_fake)))
         d_loss = d_loss_real + d_loss_fake
 
         d_loss_real_cp = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_real_cp, tf.ones_like(d_logits_real_cp)))
+                logits=d_logits_real_cp, labels=tf.ones_like(d_logits_real_cp)))
         d_loss_fake_cp = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_fake_cp, tf.zeros_like(d_logits_fake_cp)))
+                logits=d_logits_fake_cp,
+                labels=tf.zeros_like(d_logits_fake_cp)))
         d_loss_cp = d_loss_real_cp + d_loss_fake_cp
 
         if opts['objective'] == 'JS':
@@ -567,16 +568,16 @@ class ToyUnrolledGan(Gan):
         elif opts['objective'] == 'JS_modified':
             g_loss = tf.reduce_mean(
                 tf.nn.sigmoid_cross_entropy_with_logits(
-                    d_logits_fake_cp, tf.ones_like(d_logits_fake_cp)))
+                    d_logits_fake_cp, labels=tf.ones_like(d_logits_fake_cp)))
         else:
             assert False, 'No objective %r implemented' % opts['objective']
 
         c_loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                c_logits_real, tf.ones_like(c_logits_real)))
+                logits=c_logits_real, labels=tf.ones_like(c_logits_real)))
         c_loss_fake = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                c_logits_fake, tf.zeros_like(c_logits_fake)))
+                logits=c_logits_fake, labels=tf.zeros_like(c_logits_fake)))
         c_loss = c_loss_real + c_loss_fake
 
         t_vars = tf.trainable_variables()
@@ -792,22 +793,22 @@ class ImageGan(Gan):
 
         d_loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_real, tf.ones_like(d_logits_real)))
+                logits=d_logits_real, labels=tf.ones_like(d_logits_real)))
         d_loss_fake = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_fake, tf.zeros_like(d_logits_fake)))
+                logits=d_logits_fake, labels=tf.zeros_like(d_logits_fake)))
         d_loss = d_loss_real + d_loss_fake
 
         g_loss = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_fake, tf.ones_like(d_logits_fake)))
+                logits=d_logits_fake, labels=tf.ones_like(d_logits_fake)))
 
         c_loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                c_logits_real, tf.ones_like(c_logits_real)))
+                logits=c_logits_real, labels=tf.ones_like(c_logits_real)))
         c_loss_fake = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                c_logits_fake, tf.zeros_like(c_logits_fake)))
+                logits=c_logits_fake, labels=tf.zeros_like(c_logits_fake)))
         c_loss = c_loss_real + c_loss_fake
 
         t_vars = tf.trainable_variables()
@@ -1011,18 +1012,19 @@ class ImageUnrolledGan(ImageGan):
 
         d_loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_real, tf.ones_like(d_logits_real)))
+                logits=d_logits_real, labels=tf.ones_like(d_logits_real)))
         d_loss_fake = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_fake, tf.zeros_like(d_logits_fake)))
+                logits=d_logits_fake, labels=tf.zeros_like(d_logits_fake)))
         d_loss = d_loss_real + d_loss_fake
 
         d_loss_real_cp = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_real_cp, tf.ones_like(d_logits_real_cp)))
+                logits=d_logits_real_cp, labels=tf.ones_like(d_logits_real_cp)))
         d_loss_fake_cp = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                d_logits_fake_cp, tf.zeros_like(d_logits_fake_cp)))
+                logits=d_logits_fake_cp,
+                labels=tf.zeros_like(d_logits_fake_cp)))
         d_loss_cp = d_loss_real_cp + d_loss_fake_cp
 
         if opts['objective'] == 'JS':
@@ -1030,16 +1032,17 @@ class ImageUnrolledGan(ImageGan):
         elif opts['objective'] == 'JS_modified':
             g_loss = tf.reduce_mean(
                 tf.nn.sigmoid_cross_entropy_with_logits(
-                    d_logits_fake_cp, tf.ones_like(d_logits_fake_cp)))
+                    logits=d_logits_fake_cp,
+                    labels=tf.ones_like(d_logits_fake_cp)))
         else:
             assert False, 'No objective %r implemented' % opts['objective']
 
         c_loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                c_logits_real, tf.ones_like(c_logits_real)))
+                logits=c_logits_real, labels=tf.ones_like(c_logits_real)))
         c_loss_fake = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(
-                c_logits_fake, tf.zeros_like(c_logits_fake)))
+               logits=c_logits_fake, labels=tf.zeros_like(c_logits_fake)))
         c_loss = c_loss_real + c_loss_fake
 
         t_vars = tf.trainable_variables()
