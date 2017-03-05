@@ -516,19 +516,24 @@ class Metrics(object):
             pics = np.array(pics)
             image = np.concatenate(np.split(pics, num_cols), axis=2)
             image = np.concatenate(image, axis=0)
-        if opts['dataset'] == 'guitars':
-            plt.figure(figsize=(30,30))
-        plt.clf()
+        # Plotting
+        width = image.shape[0]
+        height = image.shape[1]
+        plt.figure(figsize=(width / 1000., height / 1000.), dpi=100)
         if fake_points[0].shape[-1] == 1:
             image = image[:, :, 0]
-            plt.imshow(image, cmap='Greys')
+            ax = plt.imshow(image, cmap='Greys')
         elif opts['dataset'] == 'mnist3':
-            plt.imshow(image, cmap='Greys')
+            ax = plt.imshow(image, cmap='Greys')
         else:
-            plt.imshow(image)
+            ax = plt.imshow(image)
+        # Removing ticks
+        ax.axes.get_xaxis().set_ticks([])
+        ax.axes.get_yaxis().set_ticks([])
+        # Saving
         filename = prefix + 'mixture{:06d}.png'.format(step)
         utils.create_dir(opts['work_dir'])
-        plt.savefig(os.path.join(opts["work_dir"], filename))
+        plt.savefig(os.path.join(opts["work_dir"], filename), dpi=1000)
         plt.close()
 
         return True
