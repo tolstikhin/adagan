@@ -37,6 +37,23 @@ class AdaGan(object):
         self._mixture_weights = np.zeros(0)
         self._beta_heur = opts['beta_heur']
         self._saver = ArraySaver('disk', workdir=opts['work_dir'])
+        # Which GAN architecture should we use?
+        gan_class = None
+        if opts['dataset'] in ('gmm', 'circle_gmm'):
+            if opts['unrolled'] is True:
+                gan_class = GAN.ToyUnrolledGan
+            else:
+                gan_class = GAN.ToyGan
+        elif opts['dataset'] in ('mnist', 'mnist3'):
+            if opts['unrolled']:
+                gan_class = GAN.ImageUnrolledGan
+            else:
+                gan_class = GAN.ImageGan
+        elif opts['dataset'] == 'guitars':
+            gan_class = GAN.ImageGan
+        else:
+            assert False, "We don't have any other GAN implementations yet..."
+        self._gan_class = gan_class
         if opts["inverse_metric"]:
             inv_num = opts['inverse_num']
             self._invert_point_ids = np.random.choice(
@@ -57,22 +74,9 @@ class AdaGan(object):
             data: An instance of DataHandler. Contains the training set and all
                 the relevant info about it.
         """
-        #1. Train GAN
-        gan_class = None
-        if opts['dataset'] in ('gmm', 'circle_gmm'):
-            if opts['unrolled'] is True:
-                gan_class = GAN.ToyUnrolledGan
-            else:
-                gan_class = GAN.ToyGan
-        elif opts['dataset'] in ('mnist', 'mnist3'):
-            if opts['unrolled']:
-                gan_class = GAN.ImageUnrolledGan
-            else:
-                gan_class = GAN.ImageGan
-        else:
-            assert False, "We don't have any other GAN implementations yet..."
 
-        with gan_class(opts, data, self._data_weights) as gan:
+        with self._gan_class(opts, data, self._data_weights) as gan:
+
             beta = self._next_mixture_weight(opts)
             if self.steps_made > 0 and not opts['is_bagging']:
                 # We first need to update importance weights
@@ -80,8 +84,11 @@ class AdaGan(object):
                 # (a) We are running the very first GAN instance
                 # (b) We are bagging, in which case the weughts are always uniform
                 self._update_data_weights(opts, gan, beta, data)
+                gan._data_weights = np.copy(self._data_weights)
+
+            # Train GAN
             gan.train(opts)
-            #2. Save a sample
+            # Save a sample
             logging.debug('Saving a sample from the trained component...')
             sample = gan.sample(opts, opts['samples_per_component'])
             self._saver.save('samples{:02d}.npy'.format(self.steps_made), sample)

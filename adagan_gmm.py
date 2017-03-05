@@ -35,7 +35,7 @@ FLAGS = flags.FLAGS
 
 def main():
     opts = {}
-    opts['random_seed'] = 82
+    opts['random_seed'] = 821
     opts['dataset'] = 'gmm' # gmm, circle_gmm,  mnist, mnist3 ...
     opts['unrolled'] = FLAGS.unrolled # Use Unrolled GAN? (only for images)
     opts['unrolling_steps'] = 5 # Used only if unrolled = True
@@ -67,10 +67,10 @@ def main():
     opts['tf_run_batch_size'] = 100
     opts['objective'] = 'JS'
 
-    opts['gmm_modes_num'] = 11
+    opts['gmm_modes_num'] = 3
     opts['latent_space_dim'] = FLAGS.zdim
-    opts["gan_epoch_num"] = 20
-    opts["mixture_c_epoch_num"] = 10
+    opts["gan_epoch_num"] = 15
+    opts["mixture_c_epoch_num"] = 5
     opts['opt_learning_rate'] = FLAGS.learning_rate
     opts['opt_d_learning_rate'] = FLAGS.d_learning_rate
     opts['opt_g_learning_rate'] = FLAGS.g_learning_rate

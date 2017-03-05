@@ -10,6 +10,7 @@ import os
 import logging
 import numpy as np
 import utils
+from PIL import Image
 
 class DataHandler(object):
     """A class storing and manipulating the dataset.
@@ -38,9 +39,11 @@ class DataHandler(object):
             self._load_gmm(opts)
         if opts['dataset'] == 'circle_gmm':
             self._load_mog(opts)
+        if opts['dataset'] == 'guitars':
+            self._load_guitars(opts)
 
         if opts['input_normalize_sym'] and  \
-                (opts['dataset'] == 'mnist' or opts['dataset'] == 'mnist3'):
+                opts['dataset'] in ('mnist', 'mnist3', 'guitars'):
             # Normalize data to [-1, 1]
             self.data = (self.data - 0.5) * 2.
 
@@ -115,6 +118,33 @@ class DataHandler(object):
         self.num_points = len(X)
 
         logging.debug('Loading GMM dataset done!')
+
+    def _load_guitars(self, opts):
+        """Load data from Thomann files.
+
+        """
+        logging.debug('Loading Guitars dataset')
+        data_dir = os.path.join('./', 'thomann')
+        X = None
+        files = os.listdir(data_dir)
+        pics = []
+        for f in files:
+            if '.jpg' in f:
+                im = Image.open(os.path.join(data_dir, f))
+                res = np.array(im.getdata()).reshape(128, 128, 3)
+                pics.append(res)
+        X = np.array(pics)
+
+        seed = 123
+        np.random.seed(seed)
+        np.random.shuffle(X)
+        np.random.seed()
+
+        self.data_shape = (128, 128, 3)
+        self.data = X/255.
+        self.num_points = len(X)
+
+        logging.debug('Loading Done.')
 
     def _load_mnist(self, opts):
         """Load data from MNIST files.
