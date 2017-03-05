@@ -87,7 +87,7 @@ class ProgressBar(object):
             sys.stdout.write("\n")
 
 def TQDM(opts, myRange, *args, **kwargs):
-    if opts['verbose']:
+    if opts['verbose'] and opts.get('use_tqdm', True):
         return tqdm(myRange, *args, ncols=80, smoothing=0.,  **kwargs)
     else:
         return myRange
