@@ -50,7 +50,7 @@ class AdaGan(object):
             else:
                 gan_class = GAN.ImageGan
         elif opts['dataset'] == 'guitars':
-            gan_class = GAN.ImageGan
+            gan_class = GAN.BigImageGan
         else:
             assert False, "We don't have any other GAN implementations yet..."
         self._gan_class = gan_class

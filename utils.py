@@ -169,7 +169,7 @@ def debug_updated_weights(opts, steps, weights, data):
     ax1 = plt.subplot(211)
     ax1.set_title('Weights over data points')
     plt.plot(range(len(weights)), sorted(weights))
-    plt.axis([0, len(weights), 0., np.max(weights)])
+    plt.axis([0, len(weights), 0., 2. * np.max(weights)])
     if data.labels is not None:
         all_labels = np.unique(data.labels)
         w_per_label = -1. * np.ones(len(all_labels))

@@ -517,8 +517,8 @@ class Metrics(object):
             image = np.concatenate(np.split(pics, num_cols), axis=2)
             image = np.concatenate(image, axis=0)
         # Plotting
-        width = image.shape[0]
-        height = image.shape[1]
+        height = image.shape[0]
+        width = image.shape[1]
         plt.figure(figsize=(width / 1000., height / 1000.), dpi=100)
         if fake_points[0].shape[-1] == 1:
             image = image[:, :, 0]

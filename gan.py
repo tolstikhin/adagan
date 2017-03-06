@@ -956,6 +956,69 @@ class ImageGan(Gan):
             self._is_training_ph, False)
         return res, res_fake
 
+class BigImageGan(ImageGan):
+    """A bit more flexible generator, compared to ImageGan.
+
+    """
+
+    def generator(self, opts, noise, is_training, reuse=False):
+        """Generator function, suitable for bigger simple pictures.
+
+        Args:
+            noise: [num_points, dim] array, where dim is dimensionality of the
+                latent noise space.
+            is_training: bool, defines whether to use batch_norm in the train
+                or test mode.
+        Returns:
+            [num_points, dim1, dim2, dim3] array, where the first coordinate
+            indexes the points, which all are of the shape (dim1, dim2, dim3).
+        """
+
+        output_shape = self._data.data_shape # (dim1, dim2, dim3)
+        # Computing the number of noise vectors on-the-go
+        dim1 = tf.shape(noise)[0]
+        num_filters = opts['g_num_filters']
+
+        with tf.variable_scope("GENERATOR", reuse=reuse):
+
+            height = output_shape[0] / 16
+            width = output_shape[1] / 16
+            h0 = ops.linear(opts, noise, num_filters * height * width,
+                            scope='h0_lin')
+            h0 = tf.reshape(h0, [-1, height, width, num_filters])
+            h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
+            h0 = tf.nn.relu(h0)
+            _out_shape = [dim1, height * 2, width * 2, num_filters / 2]
+            # for 128 x 128 does 8 x 8 --> 16 x 16
+            h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
+            h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
+            h1 = tf.nn.relu(h1)
+            _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
+            # for 128 x 128 does 16 x 16 --> 32 x 32 
+            h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
+            h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
+            h2 = tf.nn.relu(h2)
+            _out_shape = [dim1, height * 8, width * 8, num_filters / 8]
+            # for 128 x 128 does 32 x 32 --> 64 x 64 
+            h3 = ops.deconv2d(opts, h2, _out_shape, scope='h3_deconv')
+            h3 = ops.batch_norm(opts, h3, is_training, reuse, scope='bn_layer4')
+            h3 = tf.nn.relu(h3)
+            _out_shape = [dim1, height * 16, width * 16, num_filters / 16]
+            # for 128 x 128 does 64 x 64 --> 128 x 128 
+            h4 = ops.deconv2d(opts, h3, _out_shape, scope='h4_deconv')
+            h4 = ops.batch_norm(opts, h4, is_training, reuse, scope='bn_layer5')
+            h4 = tf.nn.relu(h4)
+            _out_shape = [dim1] + list(output_shape)
+            # data_shape[0] x data_shape[1] x ? -> data_shape
+            h5 = ops.deconv2d(opts, h4, _out_shape,
+                              d_h=1, d_w=1, scope='h5_deconv')
+            h5 = ops.batch_norm(opts, h5, is_training, reuse, scope='bn_layer6')
+
+        if opts['input_normalize_sym']:
+            return tf.nn.tanh(h5)
+        else:
+            return tf.nn.sigmoid(h5)
+
 
 class ImageUnrolledGan(ImageGan):
     """A simple GAN implementation, suitable for pictures.
