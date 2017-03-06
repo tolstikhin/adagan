@@ -122,7 +122,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
     utils.create_dir(opts['work_dir'])
-    with open(os.path.join(opts['work_dir'], 'params.txt'), 'w') as text:
+    with utils.o_gfile((opts['work_dir'], 'params.txt'), 'w') as text:
         text.write('Parameters:\n')
         for key in opts:
             text.write('%s : %s\n' % (key, opts[key]))

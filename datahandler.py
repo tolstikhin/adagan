@@ -126,11 +126,11 @@ class DataHandler(object):
         logging.debug('Loading Guitars dataset')
         data_dir = os.path.join('./', 'thomann')
         X = None
-        files = os.listdir(data_dir)
+        files = utils.listdir(data_dir)
         pics = []
         for f in files:
             if '.jpg' in f:
-                im = Image.open(os.path.join(data_dir, f))
+                im = Image.open(utils.o_gfile((data_dir, f), 'rb'))
                 res = np.array(im.getdata()).reshape(128, 128, 3)
                 pics.append(res)
         X = np.array(pics)
@@ -159,19 +159,19 @@ class DataHandler(object):
         te_X = None
         te_Y = None
 
-        with open(os.path.join(data_dir, 'train-images-idx3-ubyte')) as fd:
+        with utils.o_gfile((data_dir, 'train-images-idx3-ubyte'), 'rb') as fd:
             loaded = np.fromfile(file=fd, dtype=np.uint8)
             tr_X = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float)
 
-        with open(os.path.join(data_dir, 'train-labels-idx1-ubyte')) as fd:
+        with utils.o_gfile((data_dir, 'train-labels-idx1-ubyte'), 'rb') as fd:
             loaded = np.fromfile(file=fd, dtype=np.uint8)
             tr_Y = loaded[8:].reshape((60000)).astype(np.int)
 
-        with open(os.path.join(data_dir, 't10k-images-idx3-ubyte')) as fd:
+        with utils.o_gfile((data_dir, 't10k-images-idx3-ubyte'), 'rb') as fd:
             loaded = np.fromfile(file=fd, dtype=np.uint8)
             te_X = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float)
 
-        with open(os.path.join(data_dir, 't10k-labels-idx1-ubyte')) as fd:
+        with utils.o_gfile((data_dir, 't10k-labels-idx1-ubyte'), 'rb') as fd:
             loaded = np.fromfile(file=fd, dtype=np.uint8)
             te_Y = loaded[8:].reshape((10000)).astype(np.int)
 
@@ -208,19 +208,19 @@ class DataHandler(object):
         te_X = None
         te_Y = None
 
-        with open(os.path.join(data_dir, 'train-images-idx3-ubyte')) as fd:
+        with utils.o_gfile((data_dir, 'train-images-idx3-ubyte'), 'rb') as fd:
             loaded = np.fromfile(file=fd, dtype=np.uint8)
             tr_X = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float)
 
-        with open(os.path.join(data_dir, 'train-labels-idx1-ubyte')) as fd:
+        with utils.o_gfile((data_dir, 'train-labels-idx1-ubyte'), 'rb') as fd:
             loaded = np.fromfile(file=fd, dtype=np.uint8)
             tr_Y = loaded[8:].reshape((60000)).astype(np.int)
 
-        with open(os.path.join(data_dir, 't10k-images-idx3-ubyte')) as fd:
+        with utils.o_gfile((data_dir, 't10k-images-idx3-ubyte'), 'rb') as fd:
             loaded = np.fromfile(file=fd, dtype=np.uint8)
             te_X = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float)
 
-        with open(os.path.join(data_dir, 't10k-labels-idx1-ubyte')) as fd:
+        with utils.o_gfile((data_dir, 't10k-labels-idx1-ubyte'), 'rb') as fd:
             loaded = np.fromfile(file=fd, dtype=np.uint8)
             te_Y = loaded[8:].reshape((10000)).astype(np.int)
 

@@ -6,6 +6,7 @@
 
 """
 
+import tensorflow as tf
 import os
 import sys
 import copy
@@ -49,7 +50,7 @@ class ArraySaver(object):
             self._global_arrays[name] = copy.deepcopy(array)
         elif self._mode == 'disk':
             create_dir(self._workdir)
-            np.save(os.path.join(self._workdir, name), array)
+            np.save(o_gfile((self._workdir, name), 'wb'), array)
         else:
             assert False, 'Unknown save / load mode'
 
@@ -57,7 +58,7 @@ class ArraySaver(object):
         if self._mode == 'ram':
             return self._global_arrays[name]
         elif self._mode == 'disk':
-            return np.load(os.path.join(self._workdir, name))
+            return np.load(o_gfile((self._workdir, name), 'rb'))
         else:
             assert False, 'Unknown save / load mode'
 
@@ -93,8 +94,36 @@ def TQDM(opts, myRange, *args, **kwargs):
         return myRange
 
 def create_dir(d):
-    if not os.path.exists(d):
-        os.makedirs(d)
+    if not tf.gfile.IsDirectory(d):
+        tf.gfile.MakeDirs(d)
+
+
+class File(tf.gfile.GFile):
+    """Wrapper on GFile extending seek, to support what python file supports."""
+    def __init__(self, *args):
+        super(File, self).__init__(*args)
+
+    def seek(self, position, whence=0):
+        if whence == 1:
+            position += self.tell()
+        elif whence == 2:
+            position += self.size()
+        else:
+            assert whence == 0
+        super(File, self).seek(position)
+
+def o_gfile(filename, mode):
+    """Wrapper around file open, using gfile underneath.
+
+    filename can be a string or a tuple/list, in which case the components are
+    joined to form a full path.
+    """
+    if isinstance(filename, tuple) or isinstance(filename, list):
+        filename = os.path.join(*filename)
+    return File(filename, mode)
+
+def listdir(dirname):
+    return tf.gfile.ListDirectory(dirname)
 
 def js_div_uniform(p, num_cat=1000):
     """ Computes the JS-divergence between p and the uniform distribution.
@@ -181,4 +210,4 @@ def debug_updated_weights(opts, steps, weights, data):
         plt.scatter(range(len(all_labels)), w_per_label, s=30)
     filename = 'data_w{:02d}.png'.format(steps)
     create_dir(opts['work_dir'])
-    plt.savefig(os.path.join(opts["work_dir"], filename))
+    plt.savefig(o_gfile((opts["work_dir"], filename), 'wb'))

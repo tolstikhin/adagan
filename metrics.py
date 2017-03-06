@@ -421,7 +421,8 @@ class Metrics(object):
         plt.legend(loc='upper left')
         filename = prefix + 'mixture{:02d}.png'.format(step)
         utils.create_dir(opts['work_dir'])
-        plt.savefig(os.path.join(opts["work_dir"], filename))
+        plt.savefig(utils.o_gfile((opts["work_dir"], filename), 'wb'),
+                    format='png')
 
         # Plotting the weights, if provided
         if weights is not None:
@@ -433,7 +434,8 @@ class Metrics(object):
             plt.colorbar()
             filename = prefix + 'weights{:02d}.png'.format(step)
             utils.create_dir(opts['work_dir'])
-            plt.savefig(os.path.join(opts["work_dir"], filename))
+            plt.savefig(utils.o_gfile((opts["work_dir"], filename), 'wb'),
+                        format='png')
 
     def _make_plots_1d(self, opts, step, real_points,
                        fake_points, weights=None, prefix=''):
@@ -467,7 +469,8 @@ class Metrics(object):
         plt.legend(loc='upper left')
         filename = prefix + 'mixture{:02d}.png'.format(step)
         utils.create_dir(opts['work_dir'])
-        plt.savefig(os.path.join(opts["work_dir"], filename))
+        plt.savefig(utils.o_gfile((opts["work_dir"], filename), 'wb'),
+                    format='png')
 
 
     def _make_plots_pics(self, opts, step, real_points,
@@ -533,7 +536,8 @@ class Metrics(object):
         # Saving
         filename = prefix + 'mixture{:06d}.png'.format(step)
         utils.create_dir(opts['work_dir'])
-        plt.savefig(os.path.join(opts["work_dir"], filename), dpi=1000)
+        plt.savefig(utils.o_gfile((opts["work_dir"], filename), 'wb'),
+                    dpi=1000, format='png')
         plt.close()
 
         return True
