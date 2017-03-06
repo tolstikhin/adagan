@@ -26,7 +26,7 @@ flags.DEFINE_float("d_learning_rate", 0.0008,
 flags.DEFINE_float("learning_rate", 0.0008,
                    "Learning rate for other optimizers [8e-4]")
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
-flags.DEFINE_integer("zdim", 30, "Dimensionality of the latent space [100]")
+flags.DEFINE_integer("zdim", 100, "Dimensionality of the latent space [100]")
 flags.DEFINE_float("init_std", 0.02, "Initial variance for weights [0.02]")
 flags.DEFINE_string("workdir", 'results_guitars', "Working directory ['results']")
 flags.DEFINE_bool("unrolled", False, "Use unrolled GAN training [True]")
@@ -68,7 +68,7 @@ def main():
 
     opts['gmm_modes_num'] = 5
     opts['latent_space_dim'] = FLAGS.zdim
-    opts["gan_epoch_num"] = 15
+    opts["gan_epoch_num"] = 50
     opts["mixture_c_epoch_num"] = 5
     opts['opt_learning_rate'] = FLAGS.learning_rate
     opts['opt_d_learning_rate'] = FLAGS.d_learning_rate
@@ -77,14 +77,14 @@ def main():
     opts['batch_norm_eps'] = 1e-05
     opts['batch_norm_decay'] = 0.9
     opts['d_num_filters'] = 64
-    opts['g_num_filters'] = 512
-    opts['conv_filters_dim'] = 8
+    opts['g_num_filters'] = 64
+    opts['conv_filters_dim'] = 4
     opts["early_stop"] = -1 # set -1 to run normally
     opts["plot_every"] = 1 # set -1 to run normally
     opts["eval_points_num"] = 1000 # 25600
     opts['digit_classification_threshold'] = 0.999
-    opts['inverse_metric'] = False # Use metric from the Unrolled GAN paper?
-    opts['inverse_num'] = 1 # Number of real points to inverse.
+    opts['inverse_metric'] = True # Use metric from the Unrolled GAN paper?
+    opts['inverse_num'] = 64 # Number of real points to inverse.
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')
@@ -121,8 +121,9 @@ def main():
             metrics.make_plots(opts, step, data.data,
                     fake_points[:6 * 16], adagan._data_weights)
             logging.debug('Evaluating results')
-            # l2 = np.min(adagan._invert_losses[:step + 1], axis=0)
-            # logging.debug('MSE=%.5f, STD=%.5f' % (np.mean(l2), np.std(l2)))
+            if opts['inverse_metric']:
+                l2 = np.min(adagan._invert_losses[:step + 1], axis=0)
+                logging.debug('MSE=%.5f, STD=%.5f' % (np.mean(l2), np.std(l2)))
             res = metrics.evaluate(
                 opts, step, data.data[:500],
                 fake_points, more_fake_points, prefix='')
