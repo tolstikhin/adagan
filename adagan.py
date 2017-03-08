@@ -50,12 +50,18 @@ class AdaGan(object):
             else:
                 gan_class = GAN.ImageGan
         elif opts['dataset'] == 'guitars':
-            gan_class = GAN.BigImageGan
+            if opts['unrolled']:
+                gan_class = GAN.ImageUnrolledGan
+            else:
+                gan_class = GAN.BigImageGan
         else:
             assert False, "We don't have any other GAN implementations yet..."
         self._gan_class = gan_class
         if opts["inverse_metric"]:
             inv_num = opts['inverse_num']
+            assert inv_num < data.num_points, \
+                'Number of points to invert larger than a training set'
+            inv_num = min(inv_num, data.num_points)
             self._invert_point_ids = np.random.choice(
                 data.num_points, inv_num, replace=False)
             self._invert_losses = np.zeros((self.steps_total, inv_num))

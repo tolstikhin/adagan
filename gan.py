@@ -1215,13 +1215,13 @@ class ImageUnrolledGan(ImageGan):
                 counter += 1
 
                 if opts['verbose'] and counter % opts['plot_every'] == 0:
-                    # logging.debug(
-                    #     'Epoch: %d/%d, batch:%d/%d' % \
-                    #     (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
+                    logging.debug(
+                        'Epoch: %d/%d, batch:%d/%d' % \
+                        (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts, self._G, self._noise_ph,
-                        self._noise_for_plots[0:16],
+                        self._noise_for_plots[0:3 * 16],
                         self._is_training_ph, False)
                     metrics.make_plots(
                         opts,
