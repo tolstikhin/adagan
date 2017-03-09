@@ -128,8 +128,8 @@ class DataHandler(object):
         X = None
         files = utils.listdir(data_dir)
         pics = []
-        for f in files:
-            if '.jpg' in f:
+        for f in sorted(files):
+            if '.jpg' in f and f[0] != '.':
                 im = Image.open(utils.o_gfile((data_dir, f), 'rb'))
                 res = np.array(im.getdata()).reshape(128, 128, 3)
                 pics.append(res)
