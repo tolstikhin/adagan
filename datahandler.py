@@ -189,7 +189,7 @@ class DataHandler(object):
         np.random.seed()
 
         self.data_shape = (28, 28, 1)
-        self.data = X/255.
+        self.data = X / 255.
         self.labels = y
         self.num_points = len(X)
 

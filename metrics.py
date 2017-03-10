@@ -522,7 +522,7 @@ class Metrics(object):
         # Plotting
         height = image.shape[0]
         width = image.shape[1]
-        plt.figure(figsize=(width / 1000., height / 1000.), dpi=100)
+        plt.figure(figsize=(width, height), dpi=1)
         if fake_points[0].shape[-1] == 1:
             image = image[:, :, 0]
             ax = plt.imshow(image, cmap='Greys')
@@ -537,7 +537,7 @@ class Metrics(object):
         filename = prefix + 'mixture{:06d}.png'.format(step)
         utils.create_dir(opts['work_dir'])
         plt.savefig(utils.o_gfile((opts["work_dir"], filename), 'wb'),
-                    dpi=1000, format='png')
+                    dpi=1, format='png')
         plt.close()
 
         return True
