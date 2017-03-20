@@ -13,12 +13,12 @@ import logging
 def lrelu(x, leak=0.3):
     return tf.maximum(x, leak * x)
 
-def batch_norm(opts, _input, is_train, reuse, scope):
+def batch_norm(opts, _input, is_train, reuse, scope, scale=True):
     """Batch normalization based on tf.contrib.layers.
 
     """
     return tf.contrib.layers.batch_norm(
-        _input, center=True, scale=True,
+        _input, center=True, scale=scale,
         epsilon=opts['batch_norm_eps'], decay=opts['batch_norm_decay'],
         is_training=is_train, reuse=reuse, updates_collections=None,
         scope=scope, fused=False)
@@ -133,3 +133,12 @@ def optimizer(opts, net=None):
         return tf.train.AdamOptimizer(learning_rate, beta1=opts["opt_beta1"])
     else:
         assert False, 'Unknown optimizer.'
+
+def log_sum_exp(logits):
+    l_max = tf.reduce_max(logits, axis=1, keep_dims=True)
+    return tf.add(l_max,
+                  tf.reduce_sum(
+                    tf.exp(tf.subtract(
+                        logits,
+                        tf.tile(l_max, tf.stack([1, logits.get_shape()[1]])))),
+                    axis=1))

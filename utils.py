@@ -211,3 +211,9 @@ def debug_updated_weights(opts, steps, weights, data):
     filename = 'data_w{:02d}.png'.format(steps)
     create_dir(opts['work_dir'])
     plt.savefig(o_gfile((opts["work_dir"], filename), 'wb'))
+
+def one_hot(labels, num_class=10):
+    res = np.zeros((len(labels), num_class))
+    for idx in xrange(len(labels)):
+        res[idx][labels[idx]] = 1.
+    return res

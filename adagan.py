@@ -49,6 +49,8 @@ class AdaGan(object):
                 gan_class = GAN.ImageUnrolledGan
             else:
                 gan_class = GAN.ImageGan
+                if opts['dataset'] == 'mnist' and opts['conditional']:
+                    gan_class = GAN.MNISTLabelGan
         elif opts['dataset'] == 'guitars':
             if opts['unrolled']:
                 gan_class = GAN.ImageUnrolledGan

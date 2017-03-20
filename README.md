@@ -25,3 +25,5 @@ python adagan_mnist.py [options]
 ```
 python adagan_mnist3.py [options]
 ```
+
+## Code is still under development and can be modified
