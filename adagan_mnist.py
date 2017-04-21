@@ -19,16 +19,17 @@ from metrics import Metrics
 import utils
 
 flags = tf.app.flags
-flags.DEFINE_float("g_learning_rate", 0.0003,
+flags.DEFINE_float("g_learning_rate", 0.005,
                    "Learning rate for Generator optimizers [16e-4]")
-flags.DEFINE_float("d_learning_rate", 0.003,
+flags.DEFINE_float("d_learning_rate", 0.0001,
                    "Learning rate for Discriminator optimizers [4e-4]")
 flags.DEFINE_float("learning_rate", 0.003,
                    "Learning rate for other optimizers [8e-4]")
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
-flags.DEFINE_integer("zdim", 100, "Dimensionality of the latent space [100]")
+flags.DEFINE_string("objective", 'JS_modified', "Which phi-divergence to use ['JS_modified']")
+flags.DEFINE_integer("zdim", 40, "Dimensionality of the latent space [100]")
 flags.DEFINE_float("init_std", 0.02, "Initial variance for weights [0.02]")
-flags.DEFINE_string("workdir", 'results_mnist_cond', "Working directory ['results']")
+flags.DEFINE_string("workdir", 'results_mnist_vae', "Working directory ['results']")
 flags.DEFINE_bool("unrolled", False, "Use unrolled GAN training [True]")
 flags.DEFINE_bool("is_bagging", False, "Do we want to use bagging instead of adagan? [False]")
 FLAGS = flags.FLAGS
@@ -37,7 +38,7 @@ def main():
     opts = {}
     opts['random_seed'] = 66
     opts['dataset'] = 'mnist' # gmm, circle_gmm,  mnist, mnist3 ...
-    opts['conditional'] = True
+    opts['conditional'] = False
     opts['unrolled'] = FLAGS.unrolled # Use Unrolled GAN? (only for images)
     opts['unrolling_steps'] = 5 # Used only if unrolled = True
     opts['data_dir'] = 'mnist'
@@ -59,23 +60,23 @@ def main():
     opts['topk_constant'] = 0.5
     opts["init_std"] = FLAGS.init_std
     opts["init_bias"] = 0.0
-    opts['latent_space_distr'] = 'normal' # uniform, normal
+    opts['latent_space_distr'] = 'uniform' # uniform, normal
     opts['optimizer'] = 'adam' # sgd, adam
-    opts["batch_size"] = 100
+    opts["batch_size"] = 128
     opts["d_steps"] = 1
-    opts["g_steps"] = 1
+    opts["g_steps"] = 2
     opts["verbose"] = True
-    opts['tf_run_batch_size'] = 100
+    opts['tf_run_batch_size'] = 128
 
     opts['gmm_modes_num'] = 5
     opts['latent_space_dim'] = FLAGS.zdim
-    opts["gan_epoch_num"] = 100
+    opts["gan_epoch_num"] = 200
     opts["mixture_c_epoch_num"] = 5
     opts['opt_learning_rate'] = FLAGS.learning_rate
     opts['opt_d_learning_rate'] = FLAGS.d_learning_rate
     opts['opt_g_learning_rate'] = FLAGS.g_learning_rate
     opts["opt_beta1"] = FLAGS.adam_beta1
-    opts['batch_norm_eps'] = 1e-06
+    opts['batch_norm_eps'] = 1e-05
     opts['batch_norm_decay'] = 0.9
     opts['d_num_filters'] = 16
     opts['g_num_filters'] = 16
@@ -86,6 +87,8 @@ def main():
     opts['digit_classification_threshold'] = 0.999
     opts['inverse_metric'] = False # Use metric from the Unrolled GAN paper?
     opts['inverse_num'] = 100 # Number of real points to inverse.
+    opts['objective'] = FLAGS.objective
+    opts['vae_sigma'] = 0.01
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')
@@ -101,6 +104,11 @@ def main():
     assert data.num_points >= opts['batch_size'], 'Training set too small'
     adagan = AdaGan(opts, data)
     metrics = Metrics()
+
+    train_size = data.num_points
+    random_idx = np.random.choice(train_size, 4*320, replace=False)
+    metrics.make_plots(opts, 0, data.data,
+            data.data[random_idx], adagan._data_weights, prefix='dataset_')
 
     for step in range(opts["adagan_steps_total"]):
         logging.info('Running step {} of AdaGAN'.format(step + 1))
@@ -120,7 +128,7 @@ def main():
                 fake_points, more_fake_points, prefix='')
         else:
             metrics.make_plots(opts, step, data.data,
-                    fake_points[:6 * 16], adagan._data_weights)
+                    fake_points[:320], adagan._data_weights)
             if opts['inverse_metric']:
                 logging.debug('Evaluating results')
                 l2 = np.min(adagan._invert_losses[:step + 1], axis=0)
