@@ -9,6 +9,7 @@
 import logging
 import numpy as np
 import gan as GAN
+import vae as VAE
 from utils import ArraySaver
 from metrics import Metrics
 import utils
@@ -47,8 +48,10 @@ class AdaGan(object):
         elif opts['dataset'] in ('mnist', 'mnist3'):
             if opts['unrolled']:
                 gan_class = GAN.ImageUnrolledGan
+                # gan_class = GAN.ToyUnrolledGan
             else:
-                gan_class = GAN.ImageGan
+                gan_class = VAE.ImageVae
+                # gan_class = GAN.ImageGan
                 if opts['dataset'] == 'mnist' and opts['conditional']:
                     gan_class = GAN.MNISTLabelGan
         elif opts['dataset'] == 'guitars':
@@ -102,7 +105,7 @@ class AdaGan(object):
             self._saver.save('samples{:02d}.npy'.format(self.steps_made), sample)
             metrics = Metrics()
             metrics.make_plots(opts, self.steps_made, data.data,
-                               sample[:min(len(sample), 6 * 16)],
+                               sample[:min(len(sample), 320)],
                                prefix='component_')
             #3. Invert the generator, while we still have the graph alive.
             if opts["inverse_metric"]:
