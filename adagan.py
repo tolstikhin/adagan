@@ -59,7 +59,7 @@ class AdaGan(object):
                 # gan_class = GAN.ToyUnrolledGan
             else:
                 if opts['vae']:
-                    gan_class = VAE.ImageVaeGan
+                    gan_class = VAE.ImageVae
                     assert opts['latent_space_distr'] == 'normal',\
                         'VAE works only with Gaussian prior'
                 elif opts['pot']:
