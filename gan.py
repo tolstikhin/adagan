@@ -286,14 +286,17 @@ class ToyGan(Gan):
         output_shape = self._data.data_shape
 
         with tf.variable_scope("GENERATOR", reuse=reuse):
-            h0 = ops.linear(opts, noise, 10, 'h0_lin')
+            h0 = ops.linear(opts, noise, 500, 'h0_lin')
             h0 = tf.nn.relu(h0)
-            h1 = ops.linear(opts, h0, 5, 'h1_lin')
+            h1 = ops.linear(opts, h0, 500, 'h1_lin')
             h1 = tf.nn.relu(h1)
             h2 = ops.linear(opts, h1, np.prod(output_shape), 'h2_lin')
             h2 = tf.reshape(h2, [-1] + list(output_shape))
 
-        return h2
+        if opts['input_normalize_sym']:
+            return tf.nn.tanh(h2)
+        else:
+            return tf.nn.sigmoid(h2)
 
     def discriminator(self, opts, input_,
                       prefix='DISCRIMINATOR', reuse=False):
@@ -304,9 +307,9 @@ class ToyGan(Gan):
         assert len(shape) > 0, 'No inputs to discriminate.'
 
         with tf.variable_scope(prefix, reuse=reuse):
-            h0 = ops.linear(opts, input_, 50, 'h0_lin')
+            h0 = ops.linear(opts, input_, 500, 'h0_lin')
             h0 = tf.nn.relu(h0)
-            h1 = ops.linear(opts, h0, 30, 'h1_lin')
+            h1 = ops.linear(opts, h0, 500, 'h1_lin')
             h1 = tf.nn.relu(h1)
             h2 = ops.linear(opts, h1, 1, 'h2_lin')
 
@@ -411,15 +414,15 @@ class ToyGan(Gan):
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts, self._G, self._noise_ph,
-                        self._noise_for_plots[0:300])
-                    data_ids = np.random.choice(train_size, 300,
+                        self._noise_for_plots[0:320])
+                    data_ids = np.random.choice(train_size, 320,
                                                 replace=False,
                                                 p=self._data_weights)
                     metrics.make_plots(
                         opts, counter,
                         self._data.data[data_ids],
                         points_to_plot,
-                        prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
+                        prefix='sample_e%04d_mb%05d_' % (_epoch, _idx))
 
 
 
@@ -489,14 +492,17 @@ class ToyUnrolledGan(ToyGan):
         output_shape = self._data.data_shape
 
         with tf.variable_scope("GENERATOR", reuse=reuse):
-            h0 = ops.linear(opts, noise, 128, 'h0_lin')
+            h0 = ops.linear(opts, noise, 500, 'h0_lin')
             h0 = tf.nn.tanh(h0)
-            h1 = ops.linear(opts, h0, 128, 'h1_lin')
+            h1 = ops.linear(opts, h0, 500, 'h1_lin')
             h1 = tf.nn.tanh(h1)
             h2 = ops.linear(opts, h1, np.prod(output_shape), 'h2_lin')
             h2 = tf.reshape(h2, [-1] + list(output_shape))
 
-        return h2
+        if opts['input_normalize_sym']:
+            return tf.nn.tanh(h2)
+        else:
+            return tf.nn.sigmoid(h2)
 
     def discriminator(self, opts, input_,
                       prefix='DISCRIMINATOR', reuse=False):
@@ -507,9 +513,9 @@ class ToyUnrolledGan(ToyGan):
         assert len(shape) > 0, 'No inputs to discriminate.'
 
         with tf.variable_scope(prefix, reuse=reuse):
-            h0 = ops.linear(opts, input_, 128, 'h0_lin')
+            h0 = ops.linear(opts, input_, 500, 'h0_lin')
             h0 = tf.nn.tanh(h0)
-            h1 = ops.linear(opts, h0, 128, 'h1_lin')
+            h1 = ops.linear(opts, h0, 500, 'h1_lin')
             h1 = tf.nn.tanh(h1)
             h2 = ops.linear(opts, h1, 1, 'h2_lin')
 
@@ -570,7 +576,7 @@ class ToyUnrolledGan(ToyGan):
         elif opts['objective'] == 'JS_modified':
             g_loss = tf.reduce_mean(
                 tf.nn.sigmoid_cross_entropy_with_logits(
-                    d_logits_fake_cp, labels=tf.ones_like(d_logits_fake_cp)))
+                    logits=d_logits_fake_cp, labels=tf.ones_like(d_logits_fake_cp)))
         else:
             assert False, 'No objective %r implemented' % opts['objective']
 
@@ -664,15 +670,15 @@ class ToyUnrolledGan(ToyGan):
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts, self._G, self._noise_ph,
-                        self._noise_for_plots[0:300])
-                    data_ids = np.random.choice(train_size, 300,
+                        self._noise_for_plots[0:320])
+                    data_ids = np.random.choice(train_size, 320,
                                                 replace=False,
                                                 p=self._data_weights)
                     metrics.make_plots(
                         opts, counter,
                         self._data.data[data_ids],
                         points_to_plot,
-                        prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
+                        prefix='sample_e%04d_mb%05d_' % (_epoch, _idx))
 
 class ImageGan(Gan):
     """A simple GAN implementation, suitable for pictures.
@@ -895,14 +901,14 @@ class ImageGan(Gan):
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts, self._G, self._noise_ph,
-                        self._noise_for_plots[0:3 * 16],
+                        self._noise_for_plots[0:320],
                         self._is_training_ph, False)
                     metrics.make_plots(
                         opts,
                         counter,
                         None,
                         points_to_plot,
-                        prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
+                        prefix='sample_e%04d_mb%05d_' % (_epoch, _idx))
                 if opts['early_stop'] > 0 and counter > opts['early_stop']:
                     break
 
@@ -963,11 +969,11 @@ class MNISTLabelGan(ImageGan):
 
         with tf.variable_scope("GENERATOR", reuse=reuse):
 
-            h0 = ops.linear(opts, noise, 500, scope='h0_lin')
-            h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1', scale=True)
+            h0 = ops.linear(opts, noise, 100, scope='h0_lin')
+            h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1', scale=False)
             h0 = tf.nn.softplus(h0)
-            h1 = ops.linear(opts, h0, 500, scope='h1_lin')
-            h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2', scale=True)
+            h1 = ops.linear(opts, h0, 100, scope='h1_lin')
+            h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2', scale=False)
             h1 = tf.nn.softplus(h1)
             h2 = ops.linear(opts, h1, 28 * 28, scope='h2_lin')
             # h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
@@ -985,8 +991,9 @@ class MNISTLabelGan(ImageGan):
         num = shape[0]
 
         with tf.variable_scope(prefix, reuse=reuse):
-            h0 = tf.add(input_, tf.random_normal(shape, stddev=0.3))
-            h0 = ops.linear(opts, input_, 1000, scope='h0_linear')
+            h0 = input_
+            h0 = tf.add(h0, tf.random_normal(shape, stddev=0.3))
+            h0 = ops.linear(opts, h0, 1000, scope='h0_linear')
             # h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
             h0 = tf.nn.relu(h0)
             h1 = tf.add(h0, tf.random_normal([num, 1000], stddev=0.5))
@@ -1007,7 +1014,7 @@ class MNISTLabelGan(ImageGan):
             h4 = tf.nn.relu(h4)
             h5 = ops.linear(opts, h4, 10, scope='h5_linear')
 
-        return h5
+        return h5, h3
 
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to GAN implementation.
@@ -1042,10 +1049,11 @@ class MNISTLabelGan(ImageGan):
         # Here we follow a proposal of "Improved techniques for training
         # GANs" paper, Section 5
 
-        d_logits_real = self.discriminator(opts, real_points_ph, is_training_ph)
-        d_logits_real_unl = self.discriminator(
+        d_logits_real, _ = self.discriminator(opts, real_points_ph, is_training_ph)
+        d_logits_real_unl, d_features_real_unl = self.discriminator(
             opts, real_points_unl_ph, is_training_ph, reuse=True)
-        d_logits_fake = self.discriminator(opts, G, is_training_ph, reuse=True)
+        d_logits_fake, d_features_fake = self.discriminator(
+            opts, G, is_training_ph, reuse=True)
 
         d_loss_labelled = tf.reduce_mean(
             tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -1074,14 +1082,14 @@ class MNISTLabelGan(ImageGan):
         # cross_entropy_real_0 = tf.Print(cross_entropy_real_0,
         #                               [tf.exp(cross_entropy_real_0)],
         #                               'D(X):')
-        cross_entropy_real = 0.7 * cross_entropy_real_0 + 0.3 * (
+        cross_entropy_real = 0.65 * cross_entropy_real_0 + 0.35 * (
             -tf.nn.softplus(ops.log_sum_exp(d_logits_real_unl)))
         cross_entropy_fake_0 = -tf.nn.softplus(
             ops.log_sum_exp(d_logits_fake))
         # cross_entropy_fake_0 = tf.Print(cross_entropy_fake_0,
         #                               [tf.exp(cross_entropy_fake_0)],
         #                               '1-D(G(Z)):')
-        cross_entropy_fake = 0.7 * cross_entropy_fake_0 + 0.3 * (
+        cross_entropy_fake = 1. * cross_entropy_fake_0 + 0. * (
             Z_fake - tf.nn.softplus(ops.log_sum_exp(d_logits_fake)))
 
         d_loss_unl = - tf.reduce_mean(cross_entropy_fake) \
@@ -1090,16 +1098,20 @@ class MNISTLabelGan(ImageGan):
         d_loss = d_loss_labelled + 0.5 * d_loss_unl
 
         # Log trick:
-        # g_loss = -(ops.log_sum_exp(d_logits_fake) + D_fake)
+        # g_loss = -(ops.log_sum_exp(d_logits_fake) + cross_entropy_fake_0)
         # No log trick:
-        g_loss = tf.reduce_mean(cross_entropy_fake_0)
+        # g_loss = tf.reduce_mean(cross_entropy_fake_0)
+        # Feature matching
+        f_mean_fake = tf.reduce_mean(d_features_fake, axis=0)
+        f_mean_real = tf.reduce_mean(d_features_real_unl, axis=0)
+        g_loss = tf.reduce_mean(tf.square(f_mean_fake - f_mean_real))
 
-        c_logits_real = self.discriminator(
+        c_logits_real, _ = self.discriminator(
             opts, real_points_ph, is_training_ph, prefix='CLASSIFIER')
-        c_logits_fake = self.discriminator(
+        c_logits_fake, _ = self.discriminator(
             opts, fake_points_ph, is_training_ph,
             prefix='CLASSIFIER', reuse=True)
-        c_training_logits = self.discriminator(
+        c_training_logits, _ = self.discriminator(
             opts, real_points_ph, is_training_ph,
             prefix='CLASSIFIER', reuse=True)
 
@@ -1132,8 +1144,7 @@ class MNISTLabelGan(ImageGan):
         # g_optim = g_optim_op.apply_gradients(g_grads_and_vars)
 
 
-        d_optim = tf.train.AdamOptimizer(opts['opt_d_learning_rate'],
-                                         beta1=opts["opt_beta1"])
+        d_optim = tf.train.AdamOptimizer(lr_ph, beta1=opts["opt_beta1"])
         g_optim = tf.train.AdamOptimizer(lr_ph, beta1=opts["opt_beta1"])
         # g_optim = tf.train.GradientDescentOptimizer(lr_ph)
         d_optim = d_optim.minimize(d_loss, var_list=d_vars)
@@ -1158,6 +1169,7 @@ class MNISTLabelGan(ImageGan):
         self._c_optim = c_optim
         self._labels_ph = labels_ph
         self._d_accuracy = d_accuracy
+        self._g_loss = g_loss
         self._lr_ph = lr_ph
 
         logging.debug("Building Graph Done.")
@@ -1179,6 +1191,8 @@ class MNISTLabelGan(ImageGan):
         counter = 0
         logging.debug('Training GAN')
         lr_g = opts['opt_g_learning_rate']
+        lr_d = opts['opt_d_learning_rate']
+        accuracy = 0.
         for _epoch in xrange(opts["gan_epoch_num"]):
             for _idx in xrange(batches_num):
                 # logging.debug('Step %d of %d' % (_idx, batches_num ) )
@@ -1192,45 +1206,51 @@ class MNISTLabelGan(ImageGan):
                 # Update discriminator parameters
                 # labels_oh = utils.one_hot(self._data.labels[data_ids])
                 labels_oh = train_labels[data_ids]
+                lr = lr_d * min(1., 1. - ((0. + _epoch) / opts['gan_epoch_num']))
                 for _iter in xrange(opts['d_steps']):
                     _ = self._session.run(
                         self._d_optim,
                         feed_dict={self._real_points_ph: batch_images,
                                    self._real_points_unl_ph: batch_images_unl,
                                    self._is_training_ph: True,
+                                   self._lr_ph: lr,
                                    self._noise_ph: batch_noise,
                                    self._labels_ph: labels_oh})
                 # Update generator parameters
-                lr = lr_g * min(1., 1. - (
-                    (0. + _epoch) / opts['gan_epoch_num']))
+                lr = lr_g * min(1., 1. - ((0. + _epoch) / opts['gan_epoch_num']))
                 for _iter in xrange(opts['g_steps']):
                     _ = self._session.run(
                         self._g_optim,
                         feed_dict={self._noise_ph: batch_noise,
                                    self._is_training_ph: True,
-                                   self._lr_ph: lr})
+                                   self._lr_ph: lr,
+                                   self._real_points_unl_ph: batch_images_unl})
                 counter += 1
 
                 if opts['verbose'] and counter % opts['plot_every'] == 0:
                     accuracy = self._d_accuracy.eval(
                         feed_dict={self._real_points_ph: test_data,
-                                   self._is_training_ph: 1.,
+                                   self._is_training_ph: False,
                                    # self._labels_ph: utils.one_hot(self._data.labels[:1000])})
                                    self._labels_ph: test_labels})
+                    g_loss = self._g_loss.eval(
+                        feed_dict={self._noise_ph: batch_noise,
+                                   self._is_training_ph: False,
+                                   self._real_points_unl_ph: batch_images_unl})
                     logging.debug(
-                        'Epoch:%3d/%d, batch:%4d/%d, lr=%.4f, D accuracy in telling digits:%f' % \
-                        (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num, lr, accuracy))
+                        'Epoch:%3d/%d, batch:%4d/%d, lr_g=%.4f, D accuracy in telling digits:%f, G feature matching loss:%f' % \
+                        (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num, lr, accuracy, g_loss))
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts, self._G, self._noise_ph,
-                        self._noise_for_plots[0:3 * 16],
+                        self._noise_for_plots[0:320],
                         self._is_training_ph, False)
                     metrics.make_plots(
                         opts,
                         counter,
                         None,
                         points_to_plot,
-                        prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
+                        prefix='sample_e%04d_mb%05d_' % (_epoch, _idx))
                 if opts['early_stop'] > 0 and counter > opts['early_stop']:
                     break
 
@@ -1536,13 +1556,13 @@ class ImageUnrolledGan(ImageGan):
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts, self._G, self._noise_ph,
-                        self._noise_for_plots[0:3 * 16],
+                        self._noise_for_plots[0:320],
                         self._is_training_ph, False)
                     metrics.make_plots(
                         opts,
                         counter,
                         None,
                         points_to_plot,
-                        prefix='sample_e%02d_mb%05d_' % (_epoch, _idx))
+                        prefix='sample_e%04d_mb%05d_' % (_epoch, _idx))
                 if opts['early_stop'] > 0 and counter > opts['early_stop']:
                     break

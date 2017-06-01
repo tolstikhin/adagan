@@ -28,7 +28,8 @@ class Metrics(object):
     """
 
     def __init__(self):
-        pass
+        self.l2s = None
+        self.Qz = None
 
     def make_plots(self, opts, step, real_points,
                    fake_points, weights=None, prefix=''):
@@ -43,6 +44,11 @@ class Metrics(object):
             weights: (num_points,) array of real-valued weights for real_points
 
         """
+
+        pic_datasets = ['mnist',
+                        'mnist3',
+                        'guitars',
+                        'cifar10']
         if opts['dataset'] == 'gmm':
             if opts['toy_dataset_dim'] == 1:
                 self._make_plots_1d(opts, step, real_points,
@@ -58,7 +64,7 @@ class Metrics(object):
                                     fake_points, weights, prefix)
             else:
                 logging.debug('Can not plot, sorry...')
-        elif opts['dataset'] in ('mnist', 'mnist3', 'guitars'):
+        elif opts['dataset'] in pic_datasets:
             self._make_plots_pics(opts, step, real_points,
                                   fake_points, weights, prefix)
         else:
@@ -476,7 +482,7 @@ class Metrics(object):
     def _make_plots_pics(self, opts, step, real_points,
                          fake_points, weights=None, prefix=''):
         pics = []
-        if opts['dataset'] in ('mnist', 'mnist3', 'guitars'):
+        if opts['dataset'] in ('mnist', 'mnist3', 'guitars', 'cifar10'):
             if opts['input_normalize_sym']:
                 if real_points is not None:
                     real_points = real_points / 2. + 0.5
@@ -520,9 +526,18 @@ class Metrics(object):
             image = np.concatenate(np.split(pics, num_cols), axis=2)
             image = np.concatenate(image, axis=0)
         # Plotting
-        height = image.shape[0]
-        width = image.shape[1]
-        plt.figure(figsize=(width, height), dpi=1)
+        height = image.shape[0] / 100.
+        width = image.shape[1] / 100.
+        if self.l2s is None:
+            plt.figure(figsize=(width, height))#, dpi=1)
+        elif self.Qz is None:
+            plt.figure(figsize=(width, height + height / 2))#, dpi=1)
+            gs = matplotlib.gridspec.GridSpec(2, 1, height_ratios=[2, 1])
+            plt.subplot(gs[0])
+        else:
+            plt.figure(figsize=(width, height + height / 2))#, dpi=1)
+            gs = matplotlib.gridspec.GridSpec(2, 2, height_ratios=[2, 1])
+            plt.subplot(gs[0, :])
         if fake_points[0].shape[-1] == 1:
             image = image[:, :, 0]
             ax = plt.imshow(image, cmap='Greys')
@@ -533,11 +548,33 @@ class Metrics(object):
         # Removing ticks
         ax.axes.get_xaxis().set_ticks([])
         ax.axes.get_yaxis().set_ticks([])
+        if self.l2s is not None:
+            if self.Qz is None:
+                # Appending l2 curve if present
+                plt.subplot(gs[1])
+                x = np.arange(1, len(self.l2s) + 1) * opts['plot_every']
+                y = np.log(1e-07 + np.array(self.l2s))
+                ax, = plt.plot(x, y)
+                # Removing ticks
+                # ax.axes.get_xaxis().set_ticks([])
+                # ax.axes.get_yaxis().set_ticks([])
+            if self.Qz is not  None:
+                # Appending l2 curve if present
+                plt.subplot(gs[1,0])
+                x = np.arange(1, len(self.l2s) + 1) * opts['plot_every']
+                y = np.log(1e-07 + np.array(self.l2s))
+                plt.plot(x, y)
+
+                plt.subplot(gs[1,1])
+                # plt.scatter(self.Pz[:,0], self.Pz[:,1], s = 2, color = 'blue')
+                plt.scatter(self.Qz[:,0], self.Qz[:,1], s = 20,
+                            edgecolors='face', c = self.Qz_labels)
+                # plt.scatter(self.Qz[:,0], self.Qz[:,1], s = 10, color='blue')
         # Saving
         filename = prefix + 'mixture{:06d}.png'.format(step)
         utils.create_dir(opts['work_dir'])
         plt.savefig(utils.o_gfile((opts["work_dir"], filename), 'wb'),
-                    dpi=1, format='png')
+                    dpi=100, format='png')
         plt.close()
 
         return True

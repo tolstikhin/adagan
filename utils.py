@@ -139,7 +139,7 @@ def js_div_uniform(p, num_cat=1000):
 
     return JS
 
-def debug_mixture_classifier(opts, step, probs, points, num_plot=96, real=True):
+def debug_mixture_classifier(opts, step, probs, points, num_plot=320, real=True):
     """Small debugger for the mixture classifier's output.
 
     """
@@ -179,7 +179,7 @@ def debug_updated_weights(opts, steps, weights, data):
     assert data.num_points == len(weights), 'Length mismatch'
     ws_and_ids = sorted(zip(weights,
                         range(len(weights))))
-    num_plot = 6 * 16
+    num_plot = 20 * 16
     if num_plot > len(weights):
         return
     ids = [_id for w, _id in ws_and_ids[:num_plot]]

@@ -10,6 +10,7 @@ import logging
 import numpy as np
 import gan as GAN
 import vae as VAE
+import pot as POT
 from utils import ArraySaver
 from metrics import Metrics
 import utils
@@ -39,21 +40,35 @@ class AdaGan(object):
         self._beta_heur = opts['beta_heur']
         self._saver = ArraySaver('disk', workdir=opts['work_dir'])
         # Which GAN architecture should we use?
+        pic_datasets = ['mnist',
+                        'mnist3',
+                        'guitars',
+                        'cifar10']
+        supervised_pic_datasets = ['mnist',
+                                   'mnist3',
+                                   'cifar10']
         gan_class = None
         if opts['dataset'] in ('gmm', 'circle_gmm'):
             if opts['unrolled'] is True:
                 gan_class = GAN.ToyUnrolledGan
             else:
                 gan_class = GAN.ToyGan
-        elif opts['dataset'] in ('mnist', 'mnist3'):
+        elif opts['dataset'] in pic_datasets:
             if opts['unrolled']:
                 gan_class = GAN.ImageUnrolledGan
                 # gan_class = GAN.ToyUnrolledGan
             else:
-                gan_class = VAE.ImageVae
-                # gan_class = GAN.ImageGan
-                if opts['dataset'] == 'mnist' and opts['conditional']:
-                    gan_class = GAN.MNISTLabelGan
+                if opts['vae']:
+                    gan_class = VAE.ImageVaeGan
+                    assert opts['latent_space_distr'] == 'normal',\
+                        'VAE works only with Gaussian prior'
+                elif opts['pot']:
+                    gan_class = POT.ImagePot
+                else:
+                    gan_class = GAN.ImageGan
+                    if opts['dataset'] in supervised_pic_datasets\
+                            and opts['conditional']:
+                        gan_class = GAN.MNISTLabelGan
         elif opts['dataset'] == 'guitars':
             if opts['unrolled']:
                 gan_class = GAN.ImageUnrolledGan

@@ -26,11 +26,12 @@ flags.DEFINE_float("d_learning_rate", 0.0001,
 flags.DEFINE_float("learning_rate", 0.003,
                    "Learning rate for other optimizers [8e-4]")
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
-flags.DEFINE_string("objective", 'JS_modified', "Which phi-divergence to use ['JS_modified']")
-flags.DEFINE_integer("zdim", 40, "Dimensionality of the latent space [100]")
-flags.DEFINE_float("init_std", 0.02, "Initial variance for weights [0.02]")
-flags.DEFINE_string("workdir", 'results_mnist_vae', "Working directory ['results']")
+flags.DEFINE_integer("zdim", 8, "Dimensionality of the latent space [100]")
+flags.DEFINE_float("init_std", 0.01, "Initial variance for weights [0.02]")
+flags.DEFINE_string("workdir", 'results_mnist_pot', "Working directory ['results']")
 flags.DEFINE_bool("unrolled", False, "Use unrolled GAN training [True]")
+flags.DEFINE_bool("vae", False, "Use VAE instead of GAN")
+flags.DEFINE_bool("pot", True, "Use VAE instead of GAN")
 flags.DEFINE_bool("is_bagging", False, "Do we want to use bagging instead of adagan? [False]")
 FLAGS = flags.FLAGS
 
@@ -60,9 +61,9 @@ def main():
     opts['topk_constant'] = 0.5
     opts["init_std"] = FLAGS.init_std
     opts["init_bias"] = 0.0
-    opts['latent_space_distr'] = 'uniform' # uniform, normal
+    opts['latent_space_distr'] = 'normal' # uniform, normal
     opts['optimizer'] = 'adam' # sgd, adam
-    opts["batch_size"] = 128
+    opts["batch_size"] = 256
     opts["d_steps"] = 1
     opts["g_steps"] = 2
     opts["verbose"] = True
@@ -78,17 +79,21 @@ def main():
     opts["opt_beta1"] = FLAGS.adam_beta1
     opts['batch_norm_eps'] = 1e-05
     opts['batch_norm_decay'] = 0.9
-    opts['d_num_filters'] = 16
-    opts['g_num_filters'] = 16
+    opts['d_num_filters'] = 512
+    opts['g_num_filters'] = 512
     opts['conv_filters_dim'] = 5
     opts["early_stop"] = -1 # set -1 to run normally
-    opts["plot_every"] = 30 # set -1 to run normally
+    opts["plot_every"] = 5 # set -1 to run normally
     opts["eval_points_num"] = 25600
     opts['digit_classification_threshold'] = 0.999
     opts['inverse_metric'] = False # Use metric from the Unrolled GAN paper?
     opts['inverse_num'] = 100 # Number of real points to inverse.
-    opts['objective'] = FLAGS.objective
+    opts['objective'] = None
+    opts['vae'] = FLAGS.vae
+    opts['pot'] = FLAGS.pot
     opts['vae_sigma'] = 0.01
+    opts['pot_lambda'] = 20
+    opts['convolutions'] = False
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')

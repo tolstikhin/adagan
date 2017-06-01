@@ -311,6 +311,9 @@ class ImageVae(Vae):
 
         batches_num = self._data.num_points / opts['batch_size']
         train_size = self._data.num_points
+        num_plot = 320
+        sample_prev = np.zeros([num_plot] + list(self._data.data_shape))
+        l2s = []
 
         counter = 0
         logging.debug('Training VAE')
@@ -335,8 +338,10 @@ class ImageVae(Vae):
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts, self._generated, self._noise_ph,
-                        self._noise_for_plots[0:320],
+                        self._noise_for_plots[0:num_plot],
                         self._is_training_ph, False)
+                    l2s.append(np.sum((points_to_plot - sample_prev)**2))
+                    metrics.l2s = l2s[:]
                     metrics.make_plots(
                         opts,
                         counter,
@@ -347,12 +352,377 @@ class ImageVae(Vae):
                         self._reconstruct_x,
                         feed_dict={self._real_points_ph: batch_images,
                                    self._is_training_ph: False})
+                    metrics.l2s = None
                     metrics.make_plots(
                         opts,
                         counter,
                         None,
                         reconstructed,
                         prefix='reconstr_e%04d_mb%05d_' % (_epoch, _idx))
+                if opts['early_stop'] > 0 and counter > opts['early_stop']:
+                    break
+
+    def _sample_internal(self, opts, num):
+        """Sample from the trained GAN model.
+
+        """
+        noise = utils.generate_noise(opts, num)
+        sample = self._run_batch(
+            opts, self._generated, self._noise_ph, noise,
+            self._is_training_ph, False)
+        return sample
+
+
+
+class ImageVaeGan(Vae):
+    """ First we train VAE and then polish with GAN
+
+    """
+
+    def __init__(self, opts, data, weights):
+
+        # One more placeholder for batch norm
+        self._is_training_ph = None
+
+        Vae.__init__(self, opts, data, weights)
+
+    def decoder(self, opts, noise, is_training, reuse=False):
+
+        output_shape = self._data.data_shape # (dim1, dim2, dim3)
+        # Computing the number of noise vectors on-the-go
+        dim1 = tf.shape(noise)[0]
+        num_filters = opts['g_num_filters']
+
+        with tf.variable_scope("DECODER", reuse=reuse):
+
+            height = output_shape[0] / 4
+            width = output_shape[1] / 4
+            h0 = ops.linear(opts, noise, num_filters * height * width,
+                            scope='h0_lin')
+            h0 = tf.reshape(h0, [-1, height, width, num_filters])
+            h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
+            # h0 = tf.nn.relu(h0)
+            h0 = ops.lrelu(h0)
+            _out_shape = [dim1, height * 2, width * 2, num_filters / 2]
+            # for 28 x 28 does 7 x 7 --> 14 x 14
+            h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
+            h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
+            # h1 = tf.nn.relu(h1)
+            h1 = ops.lrelu(h1)
+            _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
+            # for 28 x 28 does 14 x 14 --> 28 x 28
+            h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
+            h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
+            # h2 = tf.nn.relu(h2)
+            h2 = ops.lrelu(h2)
+            _out_shape = [dim1] + list(output_shape)
+            # data_shape[0] x data_shape[1] x ? -> data_shape
+            h3 = ops.deconv2d(opts, h2, _out_shape,
+                              d_h=1, d_w=1, scope='h3_deconv')
+            h3 = ops.batch_norm(opts, h3, is_training, reuse, scope='bn_layer4')
+
+        if opts['input_normalize_sym']:
+            return tf.nn.tanh(h3)
+        else:
+            return tf.nn.sigmoid(h3)
+
+    def encoder(self, opts, input_, is_training,
+                      prefix='ENCODER', reuse=False):
+
+        num_filters = opts['d_num_filters']
+
+        with tf.variable_scope(prefix, reuse=reuse):
+            h0 = ops.conv2d(opts, input_, num_filters, scope='h0_conv')
+            h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
+            h0 = ops.lrelu(h0)
+            h1 = ops.conv2d(opts, h0, num_filters * 2, scope='h1_conv')
+            h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
+            h1 = ops.lrelu(h1)
+            h2 = ops.conv2d(opts, h1, num_filters * 4, scope='h2_conv')
+            h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
+            h2 = ops.lrelu(h2)
+            latent_mean = ops.linear(opts, h2, opts['latent_space_dim'], scope='h3_lin')
+            log_latent_sigmas = ops.linear(opts, h2, opts['latent_space_dim'], scope='h3_lin_sigma')
+
+        return latent_mean, log_latent_sigmas
+
+    def generator(self, opts, noise, is_training, reuse=False):
+
+        output_shape = self._data.data_shape # (dim1, dim2, dim3)
+        # Computing the number of noise vectors on-the-go
+        dim1 = tf.shape(noise)[0]
+
+        with tf.variable_scope("GENERATOR", reuse=reuse):
+            height = output_shape[0]
+            width = output_shape[1]
+            channels = output_shape[2]
+            # h0 = ops.linear(opts, noise, np.prod(output_shape), scope='h0_lin', init='const')
+            # h0 = tf.nn.relu(h0)
+            # h1 = ops.linear(opts, h0, np.prod(output_shape), scope='h1_lin', init='const')
+            # h1 = tf.nn.relu(h1)
+            # h2 = ops.linear(opts, h1, np.prod(output_shape), scope='h2_lin', init='const')
+            # h2 = tf.nn.relu(h2)
+            # h2 = tf.reshape(h2, [-1, height, width, channels])
+            h0 = ops.conv2d(opts, noise, 16, d_h=1, d_w=1, scope='h0_conv')
+            h0 = tf.nn.relu(h0)
+            h1 = ops.conv2d(opts, h0, 32, d_h=1, d_w=1, scope='h1_conv')
+            h1 = tf.nn.relu(h1)
+            h2 = ops.linear(opts, h1, np.prod(output_shape), scope='h2_lin')
+            h2 = tf.reshape(h2, [-1, height, width, channels])
+            # h0 = ops.linear(opts, noise, 4 * np.prod(output_shape), scope='h0_lin')
+            # h0 = tf.reshape(h0, [-1, height, width, 4 * channels])
+            # h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
+            # h0 = ops.lrelu(h0)
+            # _out_shape = [dim1] + [height, width, 2 * channels]
+            # h1 = ops.deconv2d(opts, h0, _out_shape,
+            #                   d_h=1, d_w=1, scope='h1_deconv')
+            # h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
+            # h1 = ops.lrelu(h1)
+            # _out_shape = [dim1] + [height, width, channels]
+            # h2 = ops.deconv2d(opts, h1, _out_shape,
+            #                   d_h=1, d_w=1, scope='h2_deconv')
+            # h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
+
+        if opts['input_normalize_sym']:
+            return tf.nn.tanh(h2)
+        else:
+            return tf.nn.sigmoid(h2)
+
+    def discriminator(self, opts, input_, is_training,
+                      prefix='DISCRIMINATOR', reuse=False):
+
+        num_filters = opts['d_num_filters']
+
+        with tf.variable_scope(prefix, reuse=reuse):
+            h0 = ops.conv2d(opts, input_, num_filters, scope='h0_conv')
+            # h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
+            h0 = ops.lrelu(h0)
+            h1 = ops.conv2d(opts, h0, num_filters * 2, scope='h1_conv')
+            # h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
+            h1 = ops.lrelu(h1)
+            h2 = ops.conv2d(opts, h1, num_filters * 4, scope='h2_conv')
+            # h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
+            h2 = ops.lrelu(h2)
+            h3 = ops.linear(opts, h2, 1, scope='h3_lin')
+
+        return h3
+
+    def _build_model_internal(self, opts):
+
+        data_shape = self._data.data_shape
+
+        # Placeholders
+        real_points_ph = tf.placeholder(
+            tf.float32, [None] + list(data_shape), name='real_points_ph')
+        fake_points_ph = tf.placeholder(
+            tf.float32, [None] + list(data_shape), name='fake_points_ph')
+        noise_ph = tf.placeholder(
+            tf.float32, [None] + [opts['latent_space_dim']], name='noise_ph')
+        is_training_ph = tf.placeholder(tf.bool, name='is_train_ph')
+
+
+        # Operations for VAE
+
+        latent_x_mean, log_latent_sigmas = self.encoder(
+            opts, real_points_ph, is_training_ph)
+        scaled_noise = tf.multiply(tf.sqrt(tf.exp(log_latent_sigmas)), noise_ph)
+        scaled_noise = tf.Print(scaled_noise, [scaled_noise], 'Scaled noise:')
+        reconstruct_x = self.decoder(opts, latent_x_mean + scaled_noise,
+                                       is_training_ph)
+        dec_enc_x = self.decoder(opts, latent_x_mean, False, reuse=True)
+        latent_x_mean = tf.Print(latent_x_mean, [latent_x_mean], 'Q(X)')
+        loss_kl = 0.5 * tf.reduce_sum(
+            tf.exp(log_latent_sigmas) +
+            tf.square(latent_x_mean) -
+            log_latent_sigmas, axis=1)
+        loss_reconstruct = tf.reduce_sum(
+            tf.square(real_points_ph - reconstruct_x), axis=1)
+        loss_reconstruct = loss_reconstruct / 2. / opts['vae_sigma']
+        loss_reconstruct = tf.reduce_mean(loss_reconstruct)
+        loss_kl = tf.reduce_mean(loss_kl)
+        loss_vae = loss_kl + loss_reconstruct
+        loss_vae = tf.Print(loss_vae, [loss_vae, loss_kl, loss_reconstruct], 'Loss, KL, reconstruct')
+
+        generated_images = self.decoder(opts, noise_ph,
+                                          is_training_ph, reuse=True)
+
+        # Operations for GAN
+
+        G = self.generator(opts, fake_points_ph, is_training_ph)
+        G.set_shape([None] + list(self._data.data_shape))
+
+        d_logits_real = self.discriminator(opts, real_points_ph, is_training_ph)
+        d_logits_fake = self.discriminator(opts, G, is_training_ph, reuse=True)
+        d_loss_real = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                logits=d_logits_real, labels=tf.ones_like(d_logits_real)))
+        d_loss_fake = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                logits=d_logits_fake, labels=tf.zeros_like(d_logits_fake)))
+        d_loss = d_loss_real + d_loss_fake
+        d_loss = tf.Print(d_loss, [d_loss_fake], 'D loss fake:')
+        # g_loss = - d_loss_fake
+        g_loss = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                logits=d_logits_fake, labels=tf.ones_like(d_logits_fake)))
+        g_loss = tf.Print(g_loss, [g_loss], 'G loss:')
+
+
+        t_vars = tf.trainable_variables()
+        dec_vars = [var for var in t_vars if 'DECODER/' in var.name]
+        enc_vars = [var for var in t_vars if 'ENCODER/' in var.name]
+        disc_vars = [var for var in t_vars if 'DISCRIMINATOR/' in var.name]
+        gen_vars = [var for var in t_vars if 'GENERATOR/' in var.name]
+
+        optim_vae = ops.optimizer(opts).minimize(
+            loss_vae, var_list=dec_vars + enc_vars)
+
+        # optim_disc_op = ops.optimizer(opts, 'd')
+        # optim_gen_op = ops.optimizer(opts, 'g')
+
+        # def debug_grads(grad, var):
+        #     _grad =  tf.Print(
+        #         grad, # grads_and_vars,
+        #         [tf.global_norm([grad])], 
+        #         'Global grad norm of %s: ' % var.name)
+        #     return _grad, var
+
+        # d_grads_and_vars = [debug_grads(grad, var) for (grad, var) in \
+        #     optim_disc_op.compute_gradients(d_loss, var_list=disc_vars)]
+        # g_grads_and_vars = [debug_grads(grad, var) for (grad, var) in \
+        #     optim_gen_op.compute_gradients(g_loss, var_list=gen_vars)]
+        # optim_disc = optim_disc_op.apply_gradients(d_grads_and_vars)
+        # optim_gen = optim_gen_op.apply_gradients(g_grads_and_vars)
+
+        optim_disc = ops.optimizer(opts, 'd').minimize(d_loss, var_list=disc_vars)
+        optim_gen = ops.optimizer(opts, 'g').minimize(g_loss, var_list=gen_vars)
+
+        self._real_points_ph = real_points_ph
+        self._fake_points_ph = fake_points_ph
+        self._noise_ph = noise_ph
+        self._is_training_ph = is_training_ph
+        self._optim_vae = optim_vae
+        self._optim_disc = optim_disc
+        self._optim_gen = optim_gen
+        self._loss_vae = loss_vae
+        self._loss_reconstruct = loss_reconstruct
+        self._loss_kl = loss_kl
+        self._generated = generated_images
+        self._reconstruct_x = dec_enc_x
+        self._G = G
+        self._d_loss = d_loss
+        self._g_loss = g_loss
+
+        logging.debug("Building Graph Done.")
+
+
+    def _train_internal(self, opts):
+
+        batches_num = self._data.num_points / opts['batch_size']
+        train_size = self._data.num_points
+        num_plot = 320
+
+        sample_prev = np.zeros([num_plot] + list(self._data.data_shape))
+        l2s = []
+        counter = 0
+        logging.debug('Training VAE')
+        for _epoch in xrange(5):
+            for _idx in xrange(batches_num):
+                # logging.debug('Step %d of %d' % (_idx, batches_num ) )
+                data_ids = np.random.choice(train_size, opts['batch_size'],
+                                            replace=False, p=self._data_weights)
+                batch_images = self._data.data[data_ids].astype(np.float)
+                batch_noise = utils.generate_noise(opts, opts['batch_size'])
+                _ = self._session.run(
+                    [self._optim_vae, self._loss_vae],
+                    feed_dict={self._real_points_ph: batch_images,
+                               self._noise_ph: batch_noise,
+                               self._is_training_ph: True})
+                counter += 1
+
+                if opts['verbose'] and counter % opts['plot_every'] == 0:
+                    logging.debug(
+                        'Epoch: %d/%d, batch:%d/%d' % \
+                        (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
+                    metrics = Metrics()
+                    points_to_plot = self._run_batch(
+                        opts, self._generated, self._noise_ph,
+                        self._noise_for_plots[0:num_plot],
+                        self._is_training_ph, False)
+                    l2s.append(np.sum((points_to_plot - sample_prev)**2))
+                    metrics.l2s = l2s[:]
+                    metrics.make_plots(
+                        opts,
+                        counter,
+                        None,
+                        points_to_plot,
+                        prefix='vae_sample_e%04d_mb%05d_' % (_epoch, _idx))
+                    sample_prev = points_to_plot
+                    reconstructed = self._session.run(
+                        self._reconstruct_x,
+                        feed_dict={self._real_points_ph: batch_images,
+                                   self._is_training_ph: False})
+                    metrics.l2s = None
+                    metrics.make_plots(
+                        opts,
+                        counter,
+                        None,
+                        reconstructed,
+                        prefix='vae_reconstr_e%04d_mb%05d_' % (_epoch, _idx))
+                if opts['early_stop'] > 0 and counter > opts['early_stop']:
+                    break
+        vae_sample = self._run_batch(
+            opts, self._generated, self._noise_ph,
+            self._noise_for_plots[0:num_plot],
+            self._is_training_ph, False)
+        metrics = Metrics()
+        metrics.l2s = [0.]
+        metrics.make_plots(opts, counter, None, vae_sample, prefix='trained_vae_')
+        sample_prev = np.zeros([num_plot] + list(self._data.data_shape))
+        l2s = []
+        counter = 0
+        logging.debug('Training GAN')
+        for _epoch in xrange(opts["gan_epoch_num"]):
+            for _idx in xrange(batches_num):
+                # logging.debug('Step %d of %d' % (_idx, batches_num ) )
+                data_ids = np.random.choice(train_size, opts['batch_size'],
+                                            replace=False, p=self._data_weights)
+                batch_images = self._data.data[data_ids].astype(np.float)
+                # Sample points from the trained VAE
+                batch_noise = self._run_batch(
+                    opts, self._generated, self._noise_ph,
+                    utils.generate_noise(opts, opts['batch_size']),
+                    self._is_training_ph, False)
+                # Update discriminator parameters
+                _ = self._session.run(
+                    [self._optim_disc, self._d_loss],
+                    feed_dict={self._real_points_ph: batch_images,
+                               self._fake_points_ph: batch_noise,
+                               self._is_training_ph: True})
+                # Update generator parameters
+                _ = self._session.run(
+                    [self._optim_gen, self._g_loss],
+                    feed_dict={self._fake_points_ph: batch_noise,
+                               self._is_training_ph: True})
+                counter += 1
+
+                if opts['verbose'] and counter % opts['plot_every'] == 0:
+                    logging.debug(
+                        'Epoch: %d/%d, batch:%d/%d' % \
+                        (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
+                    metrics = Metrics()
+                    points_to_plot = self._run_batch(
+                        opts, self._G, self._fake_points_ph,
+                        vae_sample, self._is_training_ph, False)
+                    l2s.append(np.sum((points_to_plot - sample_prev)**2))
+                    metrics.l2s = l2s[:]
+                    metrics.make_plots(
+                        opts,
+                        counter,
+                        None,
+                        points_to_plot,
+                        prefix='gan_sample_e%04d_mb%05d_' % (_epoch, _idx))
+                    sample_prev = points_to_plot
                 if opts['early_stop'] > 0 and counter > opts['early_stop']:
                     break
 
