@@ -54,6 +54,7 @@ def main():
     opts['adagan_steps_total'] = 1
     opts['samples_per_component'] = 5000
     opts['work_dir'] = FLAGS.workdir
+    opts['ckpt_dir'] = 'checkpoints'
     opts['is_bagging'] = FLAGS.is_bagging
     opts['beta_heur'] = 'uniform' # uniform, constant
     opts['weights_heur'] = 'theory_star' # theory_star, theory_dagger, topk
@@ -83,7 +84,8 @@ def main():
     opts['g_num_filters'] = 512
     opts['conv_filters_dim'] = 5
     opts["early_stop"] = -1 # set -1 to run normally
-    opts["plot_every"] = 5 # set -1 to run normally
+    opts["plot_every"] = 5
+    opts["save_every"] = 5000
     opts["eval_points_num"] = 25600
     opts['digit_classification_threshold'] = 0.999
     opts['inverse_metric'] = False # Use metric from the Unrolled GAN paper?
@@ -100,6 +102,8 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
     utils.create_dir(opts['work_dir'])
+    utils.create_dir(os.path.join(opts['work_dir'], opts['ckpt_dir']))
+
     with utils.o_gfile((opts['work_dir'], 'params.txt'), 'w') as text:
         text.write('Parameters:\n')
         for key in opts:
