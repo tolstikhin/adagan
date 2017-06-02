@@ -94,7 +94,7 @@ def main():
     opts['vae'] = FLAGS.vae
     opts['pot'] = FLAGS.pot
     opts['vae_sigma'] = 0.01
-    opts['pot_lambda'] = 20
+    opts['pot_lambda'] = 1
     opts['convolutions'] = False
 
     if opts['verbose']:

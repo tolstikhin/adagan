@@ -552,7 +552,7 @@ class Metrics(object):
                 # Appending l2 curve if present
                 plt.subplot(gs[1])
                 x = np.arange(1, len(self.l2s) + 1) * opts['plot_every']
-                y = np.log(1e-07 + np.array(self.l2s))
+                y = np.log(1e-08 + np.array(self.l2s))
                 ax, = plt.plot(x, y)
                 # Removing ticks
                 # ax.axes.get_xaxis().set_ticks([])

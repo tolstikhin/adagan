@@ -404,6 +404,7 @@ class ImagePot(Pot):
         num_plot = 320
         sample_prev = np.zeros([num_plot] + list(self._data.data_shape))
         l2s = []
+        losses = []
 
         counter = 0
         logging.debug('Training POT')
@@ -418,10 +419,14 @@ class ImagePot(Pot):
 
                 # Update generator and encoder
                 for _ in range(1):
-                    _ = self._session.run(
-                        [self._optim, self._loss],
+                    [_, loss, loss_rec, loss_gan] = self._session.run(
+                        [self._optim,
+                         self._loss,
+                         self._loss_reconstruct,
+                         self._loss_gan],
                         feed_dict={self._real_points_ph: batch_images,
                                    self._noise_ph: batch_noise})
+                losses.append(loss)
 
                 # Update discriminator
                 _ = self._session.run(
@@ -429,6 +434,7 @@ class ImagePot(Pot):
                     feed_dict={self._real_points_ph: batch_images,
                                self._noise_ph: batch_noise})
                 counter += 1
+
 
                 if counter > 0 and counter % opts['save_every'] == 0:
                     os.path.join(opts['work_dir'], opts['ckpt_dir'])
@@ -452,7 +458,8 @@ class ImagePot(Pot):
                     metrics.Qz_labels = self._data.labels[:1000]
                     metrics.Pz = batch_noise
                     l2s.append(np.sum((points_to_plot - sample_prev)**2))
-                    metrics.l2s = l2s[:]
+                    # metrics.l2s = l2s[:]
+                    metrics.l2s = losses[:]
                     metrics.make_plots(
                         opts,
                         counter,
