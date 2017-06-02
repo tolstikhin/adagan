@@ -64,7 +64,7 @@ def main():
     opts["init_bias"] = 0.0
     opts['latent_space_distr'] = 'normal' # uniform, normal
     opts['optimizer'] = 'adam' # sgd, adam
-    opts["batch_size"] = 256
+    opts["batch_size"] = 64
     opts["d_steps"] = 1
     opts["g_steps"] = 2
     opts["verbose"] = True
@@ -81,11 +81,11 @@ def main():
     opts['batch_norm_eps'] = 1e-05
     opts['batch_norm_decay'] = 0.9
     opts['d_num_filters'] = 512
-    opts['g_num_filters'] = 512
+    opts['g_num_filters'] = 1024
     opts['conv_filters_dim'] = 5
     opts["early_stop"] = -1 # set -1 to run normally
-    opts["plot_every"] = 5
-    opts["save_every"] = 5000
+    opts["plot_every"] = 25
+    opts["save_every"] = 1000
     opts["eval_points_num"] = 25600
     opts['digit_classification_threshold'] = 0.999
     opts['inverse_metric'] = False # Use metric from the Unrolled GAN paper?
@@ -94,7 +94,7 @@ def main():
     opts['vae'] = FLAGS.vae
     opts['pot'] = FLAGS.pot
     opts['vae_sigma'] = 0.01
-    opts['pot_lambda'] = 1
+    opts['pot_lambda'] = 10
     opts['convolutions'] = False
 
     if opts['verbose']:

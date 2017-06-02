@@ -350,10 +350,7 @@ class ImagePot(Pot):
                            tf.reduce_mean(d_logits_Qz, axis=0)],
                           'D(Pz), D(Qz): ')
 
-        loss_gan = - tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(
-                logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
-
+        loss_gan = -d_loss_Qz
         loss = loss_reconstr + opts['pot_lambda'] * loss_gan
         loss = tf.Print(loss, [loss, loss_reconstr, loss_gan], 'loss, reconstruct, gan')
 
@@ -466,17 +463,19 @@ class ImagePot(Pot):
                         None,
                         np.vstack([points_to_plot, 0 * batch_images[:16], batch_images]),
                         prefix='sample_e%04d_mb%05d_' % (_epoch, _idx))
+
+                    points = self._data.data[:16 * 20]
                     reconstructed = self._session.run(
                         self._reconstruct_x,
-                        feed_dict={self._real_points_ph: batch_images})
+                        feed_dict={self._real_points_ph: points})
                     # metrics.l2s = None
                     # metrics.Qz = None
                     # metrics.Pz = None
-                    merged = np.vstack([reconstructed, batch_images])
+                    merged = np.vstack([reconstructed, points])
                     r_ptr = 0
                     w_ptr = 0
-                    for _ in range(opts['batch_size']):
-                        merged[w_ptr] = batch_images[r_ptr]
+                    for _ in range(16 * 20):
+                        merged[w_ptr] = points[r_ptr]
                         merged[w_ptr + 1] = reconstructed[r_ptr]
                         r_ptr += 1
                         w_ptr += 2
