@@ -32,7 +32,7 @@ class Metrics(object):
         self.Qz = None
 
     def make_plots(self, opts, step, real_points,
-                   fake_points, weights=None, prefix=''):
+                   fake_points, weights=None, prefix='', max_rows=16):
         """Save plots of samples from the current model to the file.
 
         Args:
@@ -66,7 +66,7 @@ class Metrics(object):
                 logging.debug('Can not plot, sorry...')
         elif opts['dataset'] in pic_datasets:
             self._make_plots_pics(opts, step, real_points,
-                                  fake_points, weights, prefix)
+                                  fake_points, weights, prefix, max_rows)
         else:
             logging.debug('Can not plot, sorry...')
 
@@ -480,7 +480,7 @@ class Metrics(object):
 
 
     def _make_plots_pics(self, opts, step, real_points,
-                         fake_points, weights=None, prefix=''):
+                         fake_points, weights=None, prefix='', max_rows=16):
         pics = []
         if opts['dataset'] in ('mnist', 'mnist3', 'guitars', 'cifar10'):
             if opts['input_normalize_sym']:
@@ -513,7 +513,6 @@ class Metrics(object):
                 else:
                     pics.append(fake_points[idx, :, :, :])
         # Figuring out an arrangement
-        max_rows = 16
         num_cols = int(np.ceil(1. * num_pics / max_rows))
         last_col_num = num_pics % max_rows
         if num_cols == 1:
