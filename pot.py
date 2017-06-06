@@ -167,7 +167,7 @@ class ImagePot(Pot):
         self._is_training_ph = None
         Pot.__init__(self, opts, data, weights)
 
-    def generator(self, opts, noise, reuse=False):
+    def generator(self, opts, noise, is_training=False, reuse=False):
         """ Decoder actually.
 
         """
@@ -190,20 +190,28 @@ class ImagePot(Pot):
                 else:
                     return tf.nn.sigmoid(h3)
             else:
+                bn = opts['batch_norm']
                 dim1 = tf.shape(noise)[0]
                 height = output_shape[0] / 4
                 width = output_shape[1] / 4
-
+                # Linear
                 h0 = ops.linear(
                     opts, noise, num_units * height * width, scope='h0_lin')
                 h0 = tf.reshape(h0, [-1, height, width, num_units])
                 h0 = tf.nn.relu(h0)
+                # Deconv 1
                 _out_shape = [dim1, height * 2, width * 2, num_units / 2]
                 h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
+                if bn:
+                    h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn1')
                 h1 = tf.nn.relu(h1)
+                # Deconv 2
                 _out_shape = [dim1, height * 4, width * 4, num_units / 4]
                 h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
+                if bn:
+                    h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn2')
                 h2 = tf.nn.relu(h2)
+                # Deconv 3
                 _out_shape = [dim1] + list(output_shape)
                 h3 = ops.deconv2d(
                     opts, h2, _out_shape, d_h=1, d_w=1, scope='h3_deconv')
@@ -259,6 +267,7 @@ class ImagePot(Pot):
         """
 
         num_units = opts['d_num_filters']
+        # No convolutions as GAN happens in the latent space
         with tf.variable_scope(prefix, reuse=reuse):
             h0 = ops.linear(opts, input_, num_units, scope='h0_lin')
             # h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
@@ -272,7 +281,7 @@ class ImagePot(Pot):
 
         return h3
 
-    def encoder(self, opts, input_, reuse=False):
+    def encoder(self, opts, input_, is_training=False, reuse=False):
 
         num_units = opts['g_num_filters']
         with tf.variable_scope("ENCODER", reuse=reuse):
@@ -285,11 +294,18 @@ class ImagePot(Pot):
                 h2 = tf.nn.relu(h2)
                 code = ops.linear(opts, h2, opts['latent_space_dim'], 'h3_lin')
             else:
-                h0 = ops.conv2d(opts, input_, num_units, scope='h0_conv')
+                bn = opts['batch_norm']
+                h0 = ops.conv2d(opts, input_, num_units / 4, scope='h0_conv')
+                if bn:
+                    h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn0')
                 h0 = tf.nn.relu(h0)
-                h1 = ops.conv2d(opts, h0, num_units * 2, scope='h1_conv')
+                h1 = ops.conv2d(opts, h0, num_units / 2, scope='h1_conv')
+                if bn:
+                    h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn1')
                 h1 = tf.nn.relu(h1)
-                h2 = ops.conv2d(opts, h1, num_units * 4, scope='h2_conv')
+                h2 = ops.conv2d(opts, h1, num_units, scope='h2_conv')
+                if bn:
+                    h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn2')
                 h2 = tf.nn.relu(h2)
                 code = ops.linear(opts, h2, opts['latent_space_dim'], scope='h3_lin')
 
@@ -324,11 +340,13 @@ class ImagePot(Pot):
             tf.float32, [None] + list(data_shape), name='real_points_ph')
         noise_ph = tf.placeholder(
             tf.float32, [None] + [opts['latent_space_dim']], name='noise_ph')
+        lr_decay_ph = tf.placeholder(tf.float32)
+        bn_ph = tf.placeholder(tf.bool, name='bn_ph')
 
         # Operations
 
-        encoded_training = self.encoder(opts, real_points_ph)
-        reconstructed_training = self.generator(opts, encoded_training)
+        encoded_training = self.encoder(opts, real_points_ph, is_training=bn_ph)
+        reconstructed_training = self.generator(opts, encoded_training, is_training=bn_ph)
 
         # c(x,y) = ||x - y||
         loss_reconstr = tf.reduce_sum(
@@ -361,13 +379,15 @@ class ImagePot(Pot):
         # Updates for encoder and generator
         eg_vars = [var for var in t_vars if 'DISCRIMINATOR/' not in var.name]
 
-        d_optim = ops.optimizer(opts, 'd').minimize(loss=d_loss, var_list=d_vars)
-        optim = ops.optimizer(opts, 'g').minimize(loss=loss, var_list=eg_vars)
+        d_optim = ops.optimizer(opts, net='d', decay=lr_decay_ph).minimize(loss=d_loss, var_list=d_vars)
+        optim = ops.optimizer(opts, net='g', decay=lr_decay_ph).minimize(loss=loss, var_list=eg_vars)
 
-        generated_images = self.generator(opts, noise_ph, reuse=True)
+        generated_images = self.generator(opts, noise_ph, is_training=bn_ph, reuse=True)
 
         self._real_points_ph = real_points_ph
         self._noise_ph = noise_ph
+        self._lr_decay_ph = lr_decay_ph
+        self._bn_ph = bn_ph
         self._optim = optim
         self._d_optim = d_optim
         self._loss = loss
@@ -381,6 +401,7 @@ class ImagePot(Pot):
         saver = tf.train.Saver()
         tf.add_to_collection('real_points_ph', self._real_points_ph)
         tf.add_to_collection('noise_ph', self._noise_ph)
+        tf.add_to_collection('bn_ph', self._bn_ph)
         tf.add_to_collection('encoder', self._Qz)
         tf.add_to_collection('decoder', self._generated)
         tf.add_to_collection('disc_logits_Pz', d_logits_Pz)
@@ -404,8 +425,17 @@ class ImagePot(Pot):
         losses = []
 
         counter = 0
+        decay = 1.
         logging.debug('Training POT')
         for _epoch in xrange(opts["gan_epoch_num"]):
+
+            if _epoch == 30:
+                decay = decay / 5.
+            if _epoch == 50:
+                decay = decay / 10.
+            if _epoch == 100:
+                decay = decay / 100.
+
             for _idx in xrange(batches_num):
                 # logging.debug('Step %d of %d' % (_idx, batches_num ) )
                 data_ids = np.random.choice(train_size, opts['batch_size'],
@@ -414,26 +444,29 @@ class ImagePot(Pot):
                 # batch_labels = self._data.labels[data_ids].astype(np.int32)
                 batch_noise = 2 * utils.generate_noise(opts, opts['batch_size'])
 
-                # Update generator and encoder
-                for _ in range(1):
-                    [_, loss, loss_rec, loss_gan] = self._session.run(
-                        [self._optim,
-                         self._loss,
-                         self._loss_reconstruct,
-                         self._loss_gan],
-                        feed_dict={self._real_points_ph: batch_images,
-                                   self._noise_ph: batch_noise})
+                # Update generator (decoder) and encoder
+                [_, loss, loss_rec, loss_gan] = self._session.run(
+                    [self._optim,
+                     self._loss,
+                     self._loss_reconstruct,
+                     self._loss_gan],
+                    feed_dict={self._real_points_ph: batch_images,
+                               self._noise_ph: batch_noise,
+                               self._lr_decay_ph: decay,
+                               self._bn_ph: True})
                 losses.append(loss)
 
-                # Update discriminator
+                # Update discriminator in Z space
                 _ = self._session.run(
                     [self._d_optim, self._d_loss],
                     feed_dict={self._real_points_ph: batch_images,
-                               self._noise_ph: batch_noise})
+                               self._noise_ph: batch_noise,
+                               self._lr_decay_ph: decay,
+                               self._bn_ph: True})
                 counter += 1
 
 
-                if counter > 0 and counter % opts['save_every'] == 0:
+                if _epoch > 0 and _epoch % opts['save_every_epoch'] == 0:
                     os.path.join(opts['work_dir'], opts['ckpt_dir'])
                     self._saver.save(self._session,
                                      os.path.join(opts['work_dir'],
@@ -447,10 +480,19 @@ class ImagePot(Pot):
                         (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
-                        opts, self._generated, self._noise_ph,
-                        self._noise_for_plots[0:num_plot])
+                        opts,
+                        self._generated,
+                        self._noise_ph,
+                        self._noise_for_plots[0:num_plot],
+                        self._bn_ph,
+                        False)
                     Qz_sample = self._run_batch(
-                            opts, self._Qz, self._real_points_ph, self._data.data[:1000])
+                        opts,
+                        self._Qz,
+                        self._real_points_ph,
+                        self._data.data[:1000],
+                        self._bn_ph,
+                        False)
                     metrics.Qz = Qz_sample
                     metrics.Qz_labels = self._data.labels[:1000]
                     metrics.Pz = batch_noise
@@ -467,7 +509,9 @@ class ImagePot(Pot):
                     points = self._data.data[:16 * 20]
                     reconstructed = self._session.run(
                         self._reconstruct_x,
-                        feed_dict={self._real_points_ph: points})
+                        feed_dict={
+                            self._real_points_ph: points,
+                            self._bn_ph: False})
                     # metrics.l2s = None
                     # metrics.Qz = None
                     # metrics.Pz = None

@@ -81,11 +81,11 @@ def main():
     opts['batch_norm_eps'] = 1e-05
     opts['batch_norm_decay'] = 0.9
     opts['d_num_filters'] = 512
-    opts['g_num_filters'] = 512
+    opts['g_num_filters'] = 1024
     opts['conv_filters_dim'] = 5
     opts["early_stop"] = -1 # set -1 to run normally
     opts["plot_every"] = 30
-    opts["save_every"] = 1
+    opts["save_every_epoch"] = 10
     opts["eval_points_num"] = 25600
     opts['digit_classification_threshold'] = 0.999
     opts['inverse_metric'] = False # Use metric from the Unrolled GAN paper?
@@ -96,6 +96,7 @@ def main():
     opts['vae_sigma'] = 0.01
     opts['pot_lambda'] = 1.
     opts['convolutions'] = True
+    opts['batch_norm'] = True
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')

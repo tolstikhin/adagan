@@ -85,7 +85,7 @@ def main():
     opts['conv_filters_dim'] = 5
     opts["early_stop"] = -1 # set -1 to run normally
     opts["plot_every"] = 25
-    opts["save_every"] = 1000
+    opts["save_every_epoch"] = 10
     opts["eval_points_num"] = 25600
     opts['digit_classification_threshold'] = 0.999
     opts['inverse_metric'] = False # Use metric from the Unrolled GAN paper?

@@ -119,7 +119,7 @@ def deconv2d(opts, input_, output_shape, d_h=2, d_w=2, scope=None):
 
     return deconv
 
-def optimizer(opts, net=None):
+def optimizer(opts, net=None, decay=1.):
     """Choose a suitable optimizer.
 
     """
@@ -132,6 +132,7 @@ def optimizer(opts, net=None):
             assert False, 'Optimizer supports only d, g, or None modes.'
     else:
         learning_rate = opts['opt_learning_rate']
+    learning_rate *= decay
 
     if opts["optimizer"] == "sgd":
         return tf.train.GradientDescentOptimizer(learning_rate)
