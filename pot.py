@@ -427,6 +427,7 @@ class ImagePot(Pot):
         counter = 0
         decay = 1.
         logging.debug('Training POT')
+
         for _epoch in xrange(opts["gan_epoch_num"]):
 
             if _epoch == 30:
@@ -435,6 +436,14 @@ class ImagePot(Pot):
                 decay = decay / 10.
             if _epoch == 100:
                 decay = decay / 100.
+
+            if _epoch > 0 and _epoch % opts['save_every_epoch'] == 0:
+                os.path.join(opts['work_dir'], opts['ckpt_dir'])
+                self._saver.save(self._session,
+                                 os.path.join(opts['work_dir'],
+                                              opts['ckpt_dir'],
+                                              'trained-pot'),
+                                 global_step=counter)
 
             for _idx in xrange(batches_num):
                 # logging.debug('Step %d of %d' % (_idx, batches_num ) )
@@ -466,13 +475,6 @@ class ImagePot(Pot):
                 counter += 1
 
 
-                if _epoch > 0 and _epoch % opts['save_every_epoch'] == 0:
-                    os.path.join(opts['work_dir'], opts['ckpt_dir'])
-                    self._saver.save(self._session,
-                                     os.path.join(opts['work_dir'],
-                                                  opts['ckpt_dir'],
-                                                  'trained-pot'),
-                                     global_step=counter)
 
                 if opts['verbose'] and counter % opts['plot_every'] == 0:
                     logging.debug(
