@@ -15,7 +15,7 @@ import logging
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import metrics
+import metrics as metrics_lib
 # from metrics import Metrics
 from tqdm import tqdm
 
@@ -165,7 +165,7 @@ def debug_mixture_classifier(opts, step, probs, points, num_plot=320, real=True)
     logging.debug('Incorrectly classified %s points probs:' %\
                   idstring)
     logging.debug([val[0] for val, _id in wrong])
-    metrics = metrics.Metrics()
+    metrics = metrics_lib.Metrics()
     metrics.make_plots(opts, step,
                        None, points[correct_ids],
                        prefix='c_%s_correct_' % idstring)
@@ -185,13 +185,13 @@ def debug_updated_weights(opts, steps, weights, data):
         return
     ids = [_id for w, _id in ws_and_ids[:num_plot]]
     plot_points = data.data[ids]
-    metrics = metrics.Metrics()
+    metrics = metrics_lib.Metrics()
     metrics.make_plots(opts, steps,
                        None, plot_points,
                        prefix='d_least_')
     ids = [_id for w, _id in ws_and_ids[-num_plot:]]
     plot_points = data.data[ids]
-    metrics = metrics.Metrics()
+    metrics = metrics_lib.Metrics()
     metrics.make_plots(opts, steps,
                        None, plot_points,
                        prefix='d_most_')
