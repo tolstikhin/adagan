@@ -9,9 +9,40 @@
 import os
 import logging
 import numpy as np
+from six.moves import cPickle
 import utils
 from PIL import Image
-from keras.datasets.cifar import load_batch
+import sys
+
+
+def load_cifar_batch(fpath, label_key='labels'):
+    """Internal utility for parsing CIFAR data.
+
+    # Arguments
+        fpath: path the file to parse.
+        label_key: key for label data in the retrieve
+            dictionary.
+
+    # Returns
+        A tuple `(data, labels)`.
+    """
+    f = utils.o_gfile(fpath, 'rb')
+    if sys.version_info < (3,):
+        d = cPickle.load(f)
+    else:
+        d = cPickle.load(f, encoding='bytes')
+        # decode utf8
+        d_decoded = {}
+        for k, v in d.items():
+            d_decoded[k.decode('utf8')] = v
+        d = d_decoded
+    f.close()
+    data = d['data']
+    labels = d[label_key]
+
+    data = data.reshape(data.shape[0], 3, 32, 32)
+    return data, labels
+
 
 class DataHandler(object):
     """A class storing and manipulating the dataset.
@@ -34,16 +65,18 @@ class DataHandler(object):
         """
         if opts['dataset'] == 'mnist':
             self._load_mnist(opts)
-        if opts['dataset'] == 'mnist3':
+        elif opts['dataset'] == 'mnist3':
             self._load_mnist3(opts)
-        if opts['dataset'] == 'gmm':
+        elif opts['dataset'] == 'gmm':
             self._load_gmm(opts)
-        if opts['dataset'] == 'circle_gmm':
+        elif opts['dataset'] == 'circle_gmm':
             self._load_mog(opts)
-        if opts['dataset'] == 'guitars':
+        elif opts['dataset'] == 'guitars':
             self._load_guitars(opts)
-        if opts['dataset'] == 'cifar10':
+        elif opts['dataset'] == 'cifar10':
             self._load_cifar(opts)
+        else:
+            raise ValueError('Unknown %s' % opts['dataset'])
 
         sym_applicable = ['mnist',
                           'mnist3',
@@ -53,6 +86,12 @@ class DataHandler(object):
         if opts['input_normalize_sym'] and opts['dataset'] in sym_applicable:
             # Normalize data to [-1, 1]
             self.data = (self.data - 0.5) * 2.
+
+    def _data_dir(self, opts):
+        if opts['data_dir'].startswith("/"):
+            return opts['data_dir']
+        else:
+            return os.path.join('./', opts['data_dir'])
 
     def _load_mog(self, opts):
         """Sample data from the mixture of Gaussians on circle.
@@ -158,7 +197,7 @@ class DataHandler(object):
 
         """
         logging.debug('Loading MNIST')
-        data_dir = os.path.join('./', opts['data_dir'])
+        data_dir = self._data_dir(opts)
         # pylint: disable=invalid-name
         # Let us use all the bad variable names!
         tr_X = None
@@ -207,7 +246,7 @@ class DataHandler(object):
 
         """
         logging.debug('Loading 3-digit MNIST')
-        data_dir = os.path.join('./', opts['data_dir'])
+        data_dir = self._data_dir(opts)
         # pylint: disable=invalid-name
         # Let us use all the bad variable names!
         tr_X = None
@@ -275,18 +314,18 @@ class DataHandler(object):
         logging.debug('Loading CIFAR10 dataset')
 
         num_train_samples = 50000
-        path = os.path.join('./', opts['data_dir'])
+        data_dir = self._data_dir(opts)
         x_train = np.zeros((num_train_samples, 3, 32, 32), dtype='uint8')
         y_train = np.zeros((num_train_samples,), dtype='uint8')
 
         for i in range(1, 6):
-            fpath = os.path.join(path, 'data_batch_' + str(i))
-            data, labels = load_batch(fpath)
+            fpath = os.path.join(data_dir, 'data_batch_' + str(i))
+            data, labels = load_cifar_batch(fpath)
             x_train[(i - 1) * 10000: i * 10000, :, :, :] = data
             y_train[(i - 1) * 10000: i * 10000] = labels
 
-        fpath = os.path.join(path, 'test_batch')
-        x_test, y_test = load_batch(fpath)
+        fpath = os.path.join(data_dir, 'test_batch')
+        x_test, y_test = load_cifar_batch(fpath)
 
         y_train = np.reshape(y_train, (len(y_train), 1))
         y_test = np.reshape(y_test, (len(y_test), 1))

@@ -82,6 +82,8 @@ def main():
     opts['batch_norm_decay'] = 0.9
     opts['d_num_filters'] = 512
     opts['g_num_filters'] = 1024
+    opts['g_num_layers'] = 2
+    opts['e_num_layers'] = 3
     opts['conv_filters_dim'] = 5
     opts["early_stop"] = -1 # set -1 to run normally
     opts["plot_every"] = 1
@@ -97,6 +99,9 @@ def main():
     opts['pot_lambda'] = 1.
     opts['convolutions'] = True
     opts['batch_norm'] = True
+    # "manual" or number (float or int) giving the number of epochs to divide
+    # the learning rate by 10 (converted into an exp decay per epoch).
+    opts['decay_schedule'] = "manual"
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')

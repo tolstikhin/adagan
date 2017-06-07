@@ -38,7 +38,7 @@ class Pot(object):
         # Optimizers
 
         with self._session.as_default(), self._session.graph.as_default():
-            logging.debug('Building the graph...')
+            logging.error('Building the graph...')
             self._build_model_internal(opts)
 
         # Make sure AdamOptimizer, if used in the Graph, is defined before
@@ -51,9 +51,9 @@ class Pot(object):
 
     def __exit__(self, exc_type, exc_value, traceback):
         # Cleaning the whole default Graph
-        logging.debug('Cleaning the graph...')
+        logging.error('Cleaning the graph...')
         tf.reset_default_graph()
-        logging.debug('Closing the session...')
+        logging.error('Closing the session...')
         # Finishing the session
         self._session.close()
 
@@ -190,35 +190,32 @@ class ImagePot(Pot):
                 else:
                     return tf.nn.sigmoid(h3)
             else:
-                bn = opts['batch_norm']
-                dim1 = tf.shape(noise)[0]
-                height = output_shape[0] / 4
-                width = output_shape[1] / 4
-                # Linear
+                batch_size = tf.shape(noise)[0]
+                num_layers = opts['g_num_layers']
+                height = output_shape[0] / 2**num_layers
+                width = output_shape[1] / 2**num_layers
+
                 h0 = ops.linear(
                     opts, noise, num_units * height * width, scope='h0_lin')
                 h0 = tf.reshape(h0, [-1, height, width, num_units])
                 h0 = tf.nn.relu(h0)
-                # Deconv 1
-                _out_shape = [dim1, height * 2, width * 2, num_units / 2]
-                h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
-                if bn:
-                    h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn1')
-                h1 = tf.nn.relu(h1)
-                # Deconv 2
-                _out_shape = [dim1, height * 4, width * 4, num_units / 4]
-                h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
-                if bn:
-                    h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn2')
-                h2 = tf.nn.relu(h2)
-                # Deconv 3
-                _out_shape = [dim1] + list(output_shape)
-                h3 = ops.deconv2d(
-                    opts, h2, _out_shape, d_h=1, d_w=1, scope='h3_deconv')
+
+                layer_x = h0
+                for i in xrange(num_layers):
+                    scale = 2**(i+1)
+                    _out_shape = [batch_size, height * scale, width * scale, num_units / scale]
+                    layer_x = ops.deconv2d(opts, layer_x, _out_shape, scope='h%d_deconv' % i)
+                    if opts['batch_norm']:
+                        layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
+                    layer_x = tf.nn.relu(layer_x)
+                _out_shape = [batch_size] + list(output_shape)
+                last_h = ops.deconv2d(
+                    opts, layer_x, _out_shape, d_h=1, d_w=1, scope='hlast_deconv')
+
                 if opts['input_normalize_sym']:
-                    return tf.nn.tanh(h3)
+                    return tf.nn.tanh(last_h)
                 else:
-                    return tf.nn.sigmoid(h3)
+                    return tf.nn.sigmoid(last_h)
 
 
     # def generator(self, opts, noise, is_training, reuse=False):
@@ -294,20 +291,16 @@ class ImagePot(Pot):
                 h2 = tf.nn.relu(h2)
                 code = ops.linear(opts, h2, opts['latent_space_dim'], 'h3_lin')
             else:
-                bn = opts['batch_norm']
-                h0 = ops.conv2d(opts, input_, num_units / 4, scope='h0_conv')
-                if bn:
-                    h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn0')
-                h0 = tf.nn.relu(h0)
-                h1 = ops.conv2d(opts, h0, num_units / 2, scope='h1_conv')
-                if bn:
-                    h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn1')
-                h1 = tf.nn.relu(h1)
-                h2 = ops.conv2d(opts, h1, num_units, scope='h2_conv')
-                if bn:
-                    h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn2')
-                h2 = tf.nn.relu(h2)
-                code = ops.linear(opts, h2, opts['latent_space_dim'], scope='h3_lin')
+                num_layers = opts['e_num_layers']
+                layer_x = input_
+                for i in xrange(num_layers):
+                    scale = 2**(num_layers-i-1)
+                    layer_x = ops.conv2d(opts, layer_x, num_units / scale, scope='h%d_conv' % i)
+                    if opts['batch_norm']:
+                        layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
+                    layer_x = tf.nn.relu(layer_x)
+
+                code = ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
 
         return code
 
@@ -363,14 +356,14 @@ class ImagePot(Pot):
             tf.nn.sigmoid_cross_entropy_with_logits(
                 logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
         d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
-        d_loss = tf.Print(d_loss,
-                          [tf.reduce_mean(d_logits_Pz, axis=0),
-                           tf.reduce_mean(d_logits_Qz, axis=0)],
-                          'D(Pz), D(Qz): ')
+#         d_loss = tf.Print(d_loss,
+#                           [tf.reduce_mean(d_logits_Pz, axis=0),
+#                            tf.reduce_mean(d_logits_Qz, axis=0)],
+#                           'D(Pz), D(Qz): ')
 
         loss_gan = -d_loss_Qz
         loss = loss_reconstr + opts['pot_lambda'] * loss_gan
-        loss = tf.Print(loss, [loss, loss_reconstr, loss_gan], 'loss, reconstruct, gan')
+#         loss = tf.Print(loss, [loss, loss_reconstr, loss_gan], 'loss, reconstruct, gan')
 
 
         t_vars = tf.trainable_variables()
@@ -409,7 +402,7 @@ class ImagePot(Pot):
 
         self._saver = saver
 
-        logging.debug("Building Graph Done.")
+        logging.error("Building Graph Done.")
 
 
     def _train_internal(self, opts):
@@ -426,16 +419,21 @@ class ImagePot(Pot):
 
         counter = 0
         decay = 1.
-        logging.debug('Training POT')
+        logging.error('Training POT')
 
         for _epoch in xrange(opts["gan_epoch_num"]):
 
-            if _epoch == 30:
-                decay = decay / 5.
-            if _epoch == 50:
-                decay = decay / 10.
-            if _epoch == 100:
-                decay = decay / 100.
+            if opts['decay_schedule'] == "manual":
+                if _epoch == 30:
+                    decay = decay / 5.
+                if _epoch == 50:
+                    decay = decay / 10.
+                if _epoch == 100:
+                    decay = decay / 100.
+            else:
+                assert type(1.0 * opts['decay_schedule']) == float
+                decay = 1.0 * 10**(-_epoch / float(opts['decay_schedule']))
+
 
             if _epoch > 0 and _epoch % opts['save_every_epoch'] == 0:
                 os.path.join(opts['work_dir'], opts['ckpt_dir'])
@@ -446,7 +444,7 @@ class ImagePot(Pot):
                                  global_step=counter)
 
             for _idx in xrange(batches_num):
-                # logging.debug('Step %d of %d' % (_idx, batches_num ) )
+                # logging.error('Step %d of %d' % (_idx, batches_num ) )
                 data_ids = np.random.choice(train_size, opts['batch_size'],
                                             replace=False, p=self._data_weights)
                 batch_images = self._data.data[data_ids].astype(np.float)
@@ -475,11 +473,13 @@ class ImagePot(Pot):
                 counter += 1
 
 
-
-                if opts['verbose'] and counter % opts['plot_every'] == 0:
-                    logging.debug(
+                if opts['verbose'] and counter % 50 == 0:
+                    logging.error(
                         'Epoch: %d/%d, batch:%d/%d' % \
                         (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
+                    logging.error('[L=%.2g, Recon=%.2g, GanL=%.2g]' % (
+                        loss, loss_rec, loss_gan))
+                if opts['verbose'] and counter % opts['plot_every'] == 0:
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts,
