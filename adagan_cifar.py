@@ -97,6 +97,9 @@ def main():
     opts['pot_lambda'] = 1.
     opts['convolutions'] = True
     opts['batch_norm'] = True
+    # "manual" or number (float or int) giving the number of epochs to divide
+    # the learning rate by 10 (converted into an exp decay per epoch).
+    opts['decay_schedule'] = "manual"
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')

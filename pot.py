@@ -38,7 +38,7 @@ class Pot(object):
         # Optimizers
 
         with self._session.as_default(), self._session.graph.as_default():
-            logging.debug('Building the graph...')
+            logging.error('Building the graph...')
             self._build_model_internal(opts)
 
         # Make sure AdamOptimizer, if used in the Graph, is defined before
@@ -51,9 +51,9 @@ class Pot(object):
 
     def __exit__(self, exc_type, exc_value, traceback):
         # Cleaning the whole default Graph
-        logging.debug('Cleaning the graph...')
+        logging.error('Cleaning the graph...')
         tf.reset_default_graph()
-        logging.debug('Closing the session...')
+        logging.error('Closing the session...')
         # Finishing the session
         self._session.close()
 
@@ -363,14 +363,14 @@ class ImagePot(Pot):
             tf.nn.sigmoid_cross_entropy_with_logits(
                 logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
         d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
-        d_loss = tf.Print(d_loss,
-                          [tf.reduce_mean(d_logits_Pz, axis=0),
-                           tf.reduce_mean(d_logits_Qz, axis=0)],
-                          'D(Pz), D(Qz): ')
+#         d_loss = tf.Print(d_loss,
+#                           [tf.reduce_mean(d_logits_Pz, axis=0),
+#                            tf.reduce_mean(d_logits_Qz, axis=0)],
+#                           'D(Pz), D(Qz): ')
 
         loss_gan = -d_loss_Qz
         loss = loss_reconstr + opts['pot_lambda'] * loss_gan
-        loss = tf.Print(loss, [loss, loss_reconstr, loss_gan], 'loss, reconstruct, gan')
+#         loss = tf.Print(loss, [loss, loss_reconstr, loss_gan], 'loss, reconstruct, gan')
 
 
         t_vars = tf.trainable_variables()
@@ -409,7 +409,7 @@ class ImagePot(Pot):
 
         self._saver = saver
 
-        logging.debug("Building Graph Done.")
+        logging.error("Building Graph Done.")
 
 
     def _train_internal(self, opts):
@@ -426,16 +426,21 @@ class ImagePot(Pot):
 
         counter = 0
         decay = 1.
-        logging.debug('Training POT')
+        logging.error('Training POT')
 
         for _epoch in xrange(opts["gan_epoch_num"]):
 
-            if _epoch == 30:
-                decay = decay / 5.
-            if _epoch == 50:
-                decay = decay / 10.
-            if _epoch == 100:
-                decay = decay / 100.
+            if opts['decay_schedule'] == "manual":
+                if _epoch == 30:
+                    decay = decay / 5.
+                if _epoch == 50:
+                    decay = decay / 10.
+                if _epoch == 100:
+                    decay = decay / 100.
+            else:
+                assert type(1.0 * opts['decay_schedule']) == float
+                decay = 1.0 * 10**(-_epoch / float(opts['decay_schedule']))
+
 
             if _epoch > 0 and _epoch % opts['save_every_epoch'] == 0:
                 os.path.join(opts['work_dir'], opts['ckpt_dir'])
@@ -446,7 +451,7 @@ class ImagePot(Pot):
                                  global_step=counter)
 
             for _idx in xrange(batches_num):
-                # logging.debug('Step %d of %d' % (_idx, batches_num ) )
+                # logging.error('Step %d of %d' % (_idx, batches_num ) )
                 data_ids = np.random.choice(train_size, opts['batch_size'],
                                             replace=False, p=self._data_weights)
                 batch_images = self._data.data[data_ids].astype(np.float)
@@ -475,11 +480,13 @@ class ImagePot(Pot):
                 counter += 1
 
 
-
-                if opts['verbose'] and counter % opts['plot_every'] == 0:
-                    logging.debug(
+                if opts['verbose'] and counter % 50 == 0:
+                    logging.error(
                         'Epoch: %d/%d, batch:%d/%d' % \
                         (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
+                    logging.error('[L=%.2g, Recon=%.2g, GanL=%.2g]' % (
+                        loss, loss_rec, loss_gan))
+                if opts['verbose'] and counter % opts['plot_every'] == 0:
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts,
