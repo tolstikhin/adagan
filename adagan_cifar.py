@@ -84,7 +84,7 @@ def main():
     opts['g_num_filters'] = 1024
     opts['conv_filters_dim'] = 5
     opts["early_stop"] = -1 # set -1 to run normally
-    opts["plot_every"] = 30
+    opts["plot_every"] = 1
     opts["save_every_epoch"] = 10
     opts["eval_points_num"] = 25600
     opts['digit_classification_threshold'] = 0.999
