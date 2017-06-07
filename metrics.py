@@ -483,6 +483,7 @@ class Metrics(object):
                     fake_points = fake_points / 2. + 0.5
         num_pics = len(fake_points)
         assert num_pics > 0, 'No points to plot'
+
         # Loading images
         for idx in xrange(num_pics):
             if opts['dataset'] == 'mnist3':
@@ -505,7 +506,8 @@ class Metrics(object):
                     pics.append(1. - fake_points[idx, :, :, :])
                 else:
                     pics.append(fake_points[idx, :, :, :])
-        # Figuring out an arrangement
+
+        # Figuring out a layout
         num_cols = int(np.ceil(1. * num_pics / max_rows))
         last_col_num = num_pics % max_rows
         if num_cols == 1:
@@ -552,25 +554,20 @@ class Metrics(object):
         ax.axes.set_ylim([height_pic, 0])
         ax.axes.set_aspect(1)
 
+        # Plotting auxiliary stuff
         if self.l2s is not None:
+            # Plotting the loss curve
             if self.Qz is None:
-                # Appending l2 curve if present
                 plt.subplot(gs[1])
-                x = np.arange(1, len(self.l2s) + 1) * opts['plot_every']
-                # y = np.log(1e-08 + np.array(self.l2s))
-                y = np.array(self.l2s)
-                ax, = plt.plot(x, y)
-                # Removing ticks
-                # ax.axes.get_xaxis().set_ticks([])
-                # ax.axes.get_yaxis().set_ticks([])
-            if self.Qz is not  None:
-                # Appending l2 curve if present
+            else:
                 plt.subplot(gs[1,0])
-                x = np.arange(1, len(self.l2s) + 1) * opts['plot_every']
-                # y = np.log(1e-07 + np.array(self.l2s))
-                y = np.array(self.l2s)
-                plt.plot(x, y)
-
+            x = np.arange(1, len(self.l2s) + 1) * opts['plot_every']
+            y = np.array(self.l2s)
+            delta = 0. if min(y) >= 0. else abs(min(y))
+            y = np.log(1e-07 + delta + y)
+            plt.plot(x, y)
+            if self.Qz is not  None:
+                # Plotting the Qz scatter plot
                 plt.subplot(gs[1,1])
                 # plt.scatter(self.Pz[:,0], self.Pz[:,1], s = 2, color = 'blue')
                 plt.scatter(self.Qz[:,0], self.Qz[:,1], s = 20,
