@@ -82,8 +82,9 @@ def main():
     opts['batch_norm_decay'] = 0.9
     opts['d_num_filters'] = 512
     opts['g_num_filters'] = 1024
-    opts['g_num_layers'] = 2
+    opts['g_num_layers'] = 3
     opts['e_num_layers'] = 3
+    opts['g_arch'] = 'dcgan_mod'
     opts['conv_filters_dim'] = 5
     opts["early_stop"] = -1 # set -1 to run normally
     opts["plot_every"] = 30
