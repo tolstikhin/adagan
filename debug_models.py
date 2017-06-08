@@ -13,7 +13,7 @@ import ops
 from metrics import Metrics
 
 z_dim = 20
-num_cols = 40
+num_cols = 10
 num_pairs = 5
 ckpt_dir = os.path.join('.', 'trained_cifar')
 output_dir = 'test'
@@ -21,10 +21,11 @@ output_dir = 'test'
 with tf.Session() as sess:
     saver = tf.train.import_meta_graph(
         # os.path.join('.', 'results_cifar10_pot_conv', 'checkpoints', 'trained-pot-1.meta'))
-        os.path.join(ckpt_dir, 'trained-pot-30000.meta'))
-    saver.restore(sess, os.path.join(ckpt_dir, 'trained-pot-30000'))
+        os.path.join(ckpt_dir, 'trained-pot-36000.meta'))
+    saver.restore(sess, os.path.join(ckpt_dir, 'trained-pot-36000'))
     # saver.restore(sess, os.path.join('.', 'results_cifar10_pot_conv', 'checkpoints', 'trained-pot-1'))
     noise_ph = tf.get_collection('noise_ph')[0]
+    bn_ph = tf.get_collection('bn_ph')[0]
     decoder = tf.get_collection('decoder')[0]
 
     mean = np.zeros(z_dim)
@@ -33,7 +34,7 @@ with tf.Session() as sess:
         mean, cov, 16 * num_cols).astype(np.float32)
 
     # 1. Random samples
-    res = sess.run(decoder, feed_dict={noise_ph: noise})
+    res = sess.run(decoder, feed_dict={noise_ph: noise, bn_ph: False})
     metrics = Metrics()
     opts = {}
     opts['dataset'] = 'cifar10'
@@ -51,7 +52,7 @@ with tf.Session() as sess:
             _lambda = np.linspace(0., 1., 60)
             _lambda = np.reshape(_lambda, (60, 1))
             line = np.dot(_lambda, a) + np.dot((1 - _lambda), b)
-            res = sess.run(decoder, feed_dict={noise_ph: line})
+            res = sess.run(decoder, feed_dict={noise_ph: line, bn_ph: False})
             metrics = Metrics()
             opts = {}
             opts['dataset'] = 'cifar10'
@@ -66,7 +67,7 @@ with tf.Session() as sess:
         _lambda = np.linspace(0., 10., 60)
         _lambda = np.reshape(_lambda, (60, 1))
         line = np.dot(_lambda, b)
-        res = sess.run(decoder, feed_dict={noise_ph: line})
+        res = sess.run(decoder, feed_dict={noise_ph: line, bn_ph: False})
         metrics = Metrics()
         opts = {}
         opts['dataset'] = 'cifar10'
