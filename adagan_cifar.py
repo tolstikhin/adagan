@@ -87,6 +87,7 @@ def main():
     opts['g_num_layers'] = 3
     opts['e_num_layers'] = 3
     opts['g_arch'] = 'dcgan_mod'
+    opts['g_stride1_deconv'] = False
     opts['conv_filters_dim'] = 5
     # --GAN specific:
     opts['conditional'] = False
@@ -106,6 +107,7 @@ def main():
     opts["d_steps"] = 1
     opts["g_steps"] = 2
     opts['batch_norm'] = True
+    opts['recon_loss'] = 'l2'
     # "manual" or number (float or int) giving the number of epochs to divide
     # the learning rate by 10 (converted into an exp decay per epoch).
     opts['decay_schedule'] = 30
