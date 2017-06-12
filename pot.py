@@ -435,17 +435,8 @@ class ImagePot(Pot):
                                self._bn_ph: True})
                 counter += 1
 
-
                 if opts['verbose'] and counter % 50 == 0:
-                    # Printing (training) loss values
-                    debug_str = 'Epoch: %d/%d, batch:%d/%d' % (
-                        _epoch+1, opts['gan_epoch_num'], _idx+1, batches_num)
-                    debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g]' % (
-                        loss, loss_rec, loss_gan)
-                    logging.error(debug_str)
-
-                if opts['verbose'] and counter % 50 == 0:
-                    # Printing (test) loss values
+                    # Printing (training and test) loss values
                     test = self._data.test_data
                     [loss_rec_test, rec_test] = self._session.run(
                         [self._loss_reconstruct,
@@ -457,21 +448,23 @@ class ImagePot(Pot):
                     debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g]' % (
                         loss, loss_rec, loss_gan, loss_rec_test)
                     logging.error(debug_str)
-                    metrics = Metrics()
-                    merged = np.vstack([rec_test[:16 * 20], test[:16 * 20]])
-                    r_ptr = 0
-                    w_ptr = 0
-                    for _ in range(16 * 20):
-                        merged[w_ptr] = test[r_ptr]
-                        merged[w_ptr + 1] = rec_test[r_ptr]
-                        r_ptr += 1
-                        w_ptr += 2
-                    metrics.make_plots(
-                        opts,
-                        counter,
-                        None,
-                        merged,
-                        prefix='test_reconstr_e%04d_mb%05d_' % (_epoch, _idx))
+                    if counter % opts['plot_every'] == 0:
+                        # plotting the test images.
+                        metrics = Metrics()
+                        merged = np.vstack([rec_test[:16 * 20], test[:16 * 20]])
+                        r_ptr = 0
+                        w_ptr = 0
+                        for _ in range(16 * 20):
+                            merged[w_ptr] = test[r_ptr]
+                            merged[w_ptr + 1] = rec_test[r_ptr]
+                            r_ptr += 1
+                            w_ptr += 2
+                        metrics.make_plots(
+                            opts,
+                            counter,
+                            None,
+                            merged,
+                            prefix='test_reconstr_e%04d_mb%05d_' % (_epoch, _idx))
 
                 if opts['verbose'] and counter % opts['plot_every'] == 0:
                     # Plotting intermediate results
