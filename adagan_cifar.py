@@ -62,7 +62,7 @@ def main():
 
     # AdaGAN parameters
     opts['adagan_steps_total'] = 1
-    opts['samples_per_component'] = 5000
+    opts['samples_per_component'] = 1000
     opts['is_bagging'] = FLAGS.is_bagging
     opts['beta_heur'] = 'uniform' # uniform, constant
     opts['weights_heur'] = 'theory_star' # theory_star, theory_dagger, topk

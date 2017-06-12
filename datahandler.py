@@ -335,7 +335,6 @@ class DataHandler(object):
         x_test = x_test.transpose(0, 2, 3, 1)
 
         X = np.vstack([x_train, x_test])
-        logging.error(X[0,:,:,:])
         X = X/255.
         y = np.vstack([y_train, y_test])
 

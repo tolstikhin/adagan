@@ -230,47 +230,6 @@ class ImagePot(Pot):
                 else:
                     return tf.nn.sigmoid(last_h)
 
-
-    # def generator(self, opts, noise, is_training, reuse=False):
-
-    #     output_shape = self._data.data_shape # (dim1, dim2, dim3)
-    #     # Computing the number of noise vectors on-the-go
-    #     dim1 = tf.shape(noise)[0]
-    #     num_filters = opts['g_num_filters']
-
-    #     with tf.variable_scope("GENERATOR", reuse=reuse):
-
-    #         height = output_shape[0] / 4
-    #         width = output_shape[1] / 4
-    #         h0 = ops.linear(opts, noise, num_filters * height * width,
-    #                         scope='h0_lin')
-    #         h0 = tf.reshape(h0, [-1, height, width, num_filters])
-    #         h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
-    #         # h0 = tf.nn.relu(h0)
-    #         h0 = ops.lrelu(h0)
-    #         _out_shape = [dim1, height * 2, width * 2, num_filters / 2]
-    #         # for 28 x 28 does 7 x 7 --> 14 x 14
-    #         h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
-    #         h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
-    #         # h1 = tf.nn.relu(h1)
-    #         h1 = ops.lrelu(h1)
-    #         _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
-    #         # for 28 x 28 does 14 x 14 --> 28 x 28
-    #         h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
-    #         h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
-    #         # h2 = tf.nn.relu(h2)
-    #         h2 = ops.lrelu(h2)
-    #         _out_shape = [dim1] + list(output_shape)
-    #         # data_shape[0] x data_shape[1] x ? -> data_shape
-    #         h3 = ops.deconv2d(opts, h2, _out_shape,
-    #                           d_h=1, d_w=1, scope='h3_deconv')
-    #         h3 = ops.batch_norm(opts, h3, is_training, reuse, scope='bn_layer4')
-
-    #     if opts['input_normalize_sym']:
-    #         return tf.nn.tanh(h3)
-    #     else:
-    #         return tf.nn.sigmoid(h3)
-
     def discriminator(self, opts, input_, prefix='DISCRIMINATOR', reuse=False):
         """Discriminator for the GAN objective
 
@@ -317,24 +276,6 @@ class ImagePot(Pot):
 
         return code
 
-    # def encoder(self, opts, input_,
-    #                   prefix='ENCODER', reuse=False):
-
-    #     num_filters = 32
-    #     with tf.variable_scope(prefix, reuse=reuse):
-    #         h0 = ops.conv2d(opts, input_, num_filters, scope='h0_conv')
-    #         #h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
-    #         h0 = tf.nn.relu(h0)
-    #         h1 = ops.conv2d(opts, h0, num_filters * 2, scope='h1_conv')
-    #         #h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
-    #         h1 = tf.nn.relu(h1)
-    #         h2 = ops.conv2d(opts, h1, num_filters * 4, scope='h2_conv')
-    #         #h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
-    #         h2 = tf.nn.relu(h2)
-    #         code = ops.linear(opts, h2, opts['latent_space_dim'], scope='h3_lin')
-
-    #     return code
-
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to POT implementation.
 
@@ -369,14 +310,9 @@ class ImagePot(Pot):
             tf.nn.sigmoid_cross_entropy_with_logits(
                 logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
         d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
-#         d_loss = tf.Print(d_loss,
-#                           [tf.reduce_mean(d_logits_Pz, axis=0),
-#                            tf.reduce_mean(d_logits_Qz, axis=0)],
-#                           'D(Pz), D(Qz): ')
 
         loss_gan = -d_loss_Qz
         loss = loss_reconstr + opts['pot_lambda'] * loss_gan
-#         loss = tf.Print(loss, [loss, loss_reconstr, loss_gan], 'loss, reconstruct, gan')
 
 
         t_vars = tf.trainable_variables()
@@ -463,6 +399,7 @@ class ImagePot(Pot):
                 # batch_labels = self._data.labels[data_ids].astype(np.int32)
                 batch_noise = opts['pot_pz_std'] * utils.generate_noise(opts, opts['batch_size'])
 
+
                 # Update generator (decoder) and encoder
                 [_, loss, loss_rec, loss_gan] = self._session.run(
                     [self._optim,
@@ -540,15 +477,15 @@ class ImagePot(Pot):
                         merged,
                         prefix='reconstr_e%04d_mb%05d_' % (_epoch, _idx))
                     sample_prev = points_to_plot[:]
-                if opts['early_stop'] > 0 and counter > opts['early_stop']:
-                    break
 
     def _sample_internal(self, opts, num):
         """Sample from the trained GAN model.
 
         """
-
-        assert False, 'Need to code'
+        noise = opts['pot_pz_std'] * utils.generate_noise(opts, num)
+        sample = self._run_batch(
+            opts, self._generated, self._noise_ph, noise, self._bn_ph, False)
+        return sample
 
 
 
