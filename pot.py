@@ -205,24 +205,25 @@ class ImagePot(Pot):
                     opts, noise, num_units * height * width, scope='h0_lin')
                 h0 = tf.reshape(h0, [-1, height, width, num_units])
                 h0 = tf.nn.relu(h0)
-
                 layer_x = h0
                 for i in xrange(num_layers-1):
                     scale = 2**(i+1)
                     if opts['g_stride1_deconv']:
+                        # Sylvain, I'm worried about this part!
                         _out_shape = [batch_size, height * scale / 2,
                                       width * scale / 2, num_units / scale * 2]
                         layer_x = ops.deconv2d(
                             opts, layer_x, _out_shape, d_h=1, d_w=1,
                             scope='h%d_deconv_1x1' % i)
                         layer_x = tf.nn.relu(layer_x)
-                    _out_shape = [batch_size, height * scale, width * scale, num_units / scale]
-                    layer_x = ops.deconv2d(opts, layer_x, _out_shape, scope='h%d_deconv' % i)
+                    else:
+                        _out_shape = [batch_size, height * scale, width * scale, num_units / scale]
+                        layer_x = ops.deconv2d(opts, layer_x, _out_shape, scope='h%d_deconv' % i)
                     if opts['batch_norm']:
                         layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
                     layer_x = tf.nn.relu(layer_x)
-                _out_shape = [batch_size] + list(output_shape)
 
+                _out_shape = [batch_size] + list(output_shape)
                 if opts['g_arch'] == 'dcgan':
                     last_h = ops.deconv2d(
                         opts, layer_x, _out_shape, scope='hlast_deconv')
@@ -437,12 +438,42 @@ class ImagePot(Pot):
 
 
                 if opts['verbose'] and counter % 50 == 0:
-                    # Printing loss values
+                    # Printing (training) loss values
                     debug_str = 'Epoch: %d/%d, batch:%d/%d' % (
                         _epoch+1, opts['gan_epoch_num'], _idx+1, batches_num)
                     debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g]' % (
                         loss, loss_rec, loss_gan)
                     logging.error(debug_str)
+
+                if opts['verbose'] and counter % 50 == 0:
+                    # Printing (test) loss values
+                    test = self._data.test_data
+                    [loss_rec_test, rec_test] = self._session.run(
+                        [self._loss_reconstruct,
+                         self._reconstruct_x],
+                        feed_dict={self._real_points_ph: test,
+                                   self._bn_ph: False})
+                    debug_str = 'Epoch: %d/%d, batch:%d/%d' % (
+                        _epoch+1, opts['gan_epoch_num'], _idx+1, batches_num)
+                    debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g]' % (
+                        loss, loss_rec, loss_gan, loss_rec_test)
+                    logging.error(debug_str)
+                    metrics = Metrics()
+                    merged = np.vstack([rec_test[:16 * 20], test[:16 * 20]])
+                    r_ptr = 0
+                    w_ptr = 0
+                    for _ in range(16 * 20):
+                        merged[w_ptr] = test[r_ptr]
+                        merged[w_ptr + 1] = rec_test[r_ptr]
+                        r_ptr += 1
+                        w_ptr += 2
+                    metrics.make_plots(
+                        opts,
+                        counter,
+                        None,
+                        merged,
+                        prefix='test_reconstr_e%04d_mb%05d_' % (_epoch, _idx))
+
                 if opts['verbose'] and counter % opts['plot_every'] == 0:
                     # Plotting intermediate results
                     metrics = Metrics()
