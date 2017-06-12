@@ -216,9 +216,8 @@ class ImagePot(Pot):
                             opts, layer_x, _out_shape, d_h=1, d_w=1,
                             scope='h%d_deconv_1x1' % i)
                         layer_x = tf.nn.relu(layer_x)
-                    else:
-                        _out_shape = [batch_size, height * scale, width * scale, num_units / scale]
-                        layer_x = ops.deconv2d(opts, layer_x, _out_shape, scope='h%d_deconv' % i)
+                    _out_shape = [batch_size, height * scale, width * scale, num_units / scale]
+                    layer_x = ops.deconv2d(opts, layer_x, _out_shape, scope='h%d_deconv' % i)
                     if opts['batch_norm']:
                         layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
                     layer_x = tf.nn.relu(layer_x)
