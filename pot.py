@@ -192,8 +192,14 @@ class ImagePot(Pot):
             else:
                 batch_size = tf.shape(noise)[0]
                 num_layers = opts['g_num_layers']
-                height = output_shape[0] / 2**num_layers
-                width = output_shape[1] / 2**num_layers
+                if opts['g_arch'] == 'dcgan':
+                    height = output_shape[0] / 2**num_layers
+                    width = output_shape[1] / 2**num_layers
+                elif opts['g_arch'] == 'dcgan_mod':
+                    height = output_shape[0] / 2**(num_layers-1)
+                    width = output_shape[1] / 2**(num_layers-1)
+                else:
+                    assert False
 
                 h0 = ops.linear(
                     opts, noise, num_units * height * width, scope='h0_lin')
@@ -201,7 +207,7 @@ class ImagePot(Pot):
                 h0 = tf.nn.relu(h0)
 
                 layer_x = h0
-                for i in xrange(num_layers):
+                for i in xrange(num_layers-1):
                     scale = 2**(i+1)
                     _out_shape = [batch_size, height * scale, width * scale, num_units / scale]
                     layer_x = ops.deconv2d(opts, layer_x, _out_shape, scope='h%d_deconv' % i)
@@ -209,8 +215,15 @@ class ImagePot(Pot):
                         layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
                     layer_x = tf.nn.relu(layer_x)
                 _out_shape = [batch_size] + list(output_shape)
-                last_h = ops.deconv2d(
-                    opts, layer_x, _out_shape, d_h=1, d_w=1, scope='hlast_deconv')
+
+                if opts['g_arch'] == 'dcgan':
+                    last_h = ops.deconv2d(
+                        opts, layer_x, _out_shape, scope='hlast_deconv')
+                elif opts['g_arch'] == 'dcgan_mod':
+                    last_h = ops.deconv2d(
+                        opts, layer_x, _out_shape, d_h=1, d_w=1, scope='hlast_deconv')
+                else:
+                    assert False
 
                 if opts['input_normalize_sym']:
                     return tf.nn.tanh(last_h)
@@ -474,11 +487,11 @@ class ImagePot(Pot):
 
                 if opts['verbose'] and counter % 50 == 0:
                     # Printing loss values
-                    logging.error(
-                        'Epoch: %d/%d, batch:%d/%d' % \
-                        (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
-                    logging.error('[L=%.2g, Recon=%.2g, GanL=%.2g]' % (
-                        loss, loss_rec, loss_gan))
+                    debug_str = 'Epoch: %d/%d, batch:%d/%d' % (
+                        _epoch+1, opts['gan_epoch_num'], _idx+1, batches_num)
+                    debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g]' % (
+                        loss, loss_rec, loss_gan)
+                    logging.error(debug_str)
                 if opts['verbose'] and counter % opts['plot_every'] == 0:
                     # Plotting intermediate results
                     metrics = Metrics()
