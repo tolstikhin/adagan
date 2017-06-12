@@ -209,6 +209,13 @@ class ImagePot(Pot):
                 layer_x = h0
                 for i in xrange(num_layers-1):
                     scale = 2**(i+1)
+                    if opts['g_stride1_deconv']:
+                        _out_shape = [batch_size, height * scale / 2,
+                                      width * scale / 2, num_units / scale * 2]
+                        layer_x = ops.deconv2d(
+                            opts, layer_x, _out_shape, d_h=1, d_w=1,
+                            scope='h%d_deconv_1x1' % i)
+                        layer_x = tf.nn.relu(layer_x)
                     _out_shape = [batch_size, height * scale, width * scale, num_units / scale]
                     layer_x = ops.deconv2d(opts, layer_x, _out_shape, scope='h%d_deconv' % i)
                     if opts['batch_norm']:
@@ -295,11 +302,18 @@ class ImagePot(Pot):
         encoded_training = self.encoder(opts, real_points_ph, is_training=bn_ph)
         reconstructed_training = self.generator(opts, encoded_training, is_training=bn_ph)
 
-        # c(x,y) = ||x - y||
-        loss_reconstr = tf.reduce_sum(
-            tf.square(real_points_ph - reconstructed_training), axis=1)
-        # sqrt(x + delta) guarantees the direvative 1/(x + delta) is finite
-        loss_reconstr = tf.reduce_mean(tf.sqrt(loss_reconstr + 1e-08))
+        if opts['recon_loss'] == 'l2':
+            # c(x,y) = ||x - y||_2
+            loss_reconstr = tf.reduce_sum(
+                tf.square(real_points_ph - reconstructed_training), axis=1)
+            # sqrt(x + delta) guarantees the direvative 1/(x + delta) is finite
+            loss_reconstr = tf.reduce_mean(tf.sqrt(loss_reconstr + 1e-08))
+        elif opts['recon_loss'] == 'l1':
+            # c(x,y) = ||x - y||_1
+            loss_reconstr = tf.reduce_mean(tf.reduce_sum(
+                tf.abs(real_points_ph - reconstructed_training), axis=1))
+        else:
+            assert False
 
         d_logits_Pz = self.discriminator(opts, noise_ph)
         d_logits_Qz = self.discriminator(opts, encoded_training, reuse=True)
