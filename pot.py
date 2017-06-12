@@ -28,7 +28,7 @@ class Pot(object):
         self._data = data
         self._data_weights = np.copy(weights)
         # Latent noise sampled ones to apply decoder while training
-        self._noise_for_plots = 2 * utils.generate_noise(opts, 500)
+        self._noise_for_plots = opts['pot_pz_std'] * utils.generate_noise(opts, 500)
         # Placeholders
         self._real_points_ph = None
         self._noise_ph = None
@@ -434,7 +434,6 @@ class ImagePot(Pot):
                 assert type(1.0 * opts['decay_schedule']) == float
                 decay = 1.0 * 10**(-_epoch / float(opts['decay_schedule']))
 
-
             if _epoch > 0 and _epoch % opts['save_every_epoch'] == 0:
                 os.path.join(opts['work_dir'], opts['ckpt_dir'])
                 self._saver.save(self._session,
@@ -449,7 +448,7 @@ class ImagePot(Pot):
                                             replace=False, p=self._data_weights)
                 batch_images = self._data.data[data_ids].astype(np.float)
                 # batch_labels = self._data.labels[data_ids].astype(np.int32)
-                batch_noise = 2 * utils.generate_noise(opts, opts['batch_size'])
+                batch_noise = opts['pot_pz_std'] * utils.generate_noise(opts, opts['batch_size'])
 
                 # Update generator (decoder) and encoder
                 [_, loss, loss_rec, loss_gan] = self._session.run(
@@ -474,31 +473,29 @@ class ImagePot(Pot):
 
 
                 if opts['verbose'] and counter % 50 == 0:
+                    # Printing loss values
                     logging.error(
                         'Epoch: %d/%d, batch:%d/%d' % \
                         (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
                     logging.error('[L=%.2g, Recon=%.2g, GanL=%.2g]' % (
                         loss, loss_rec, loss_gan))
                 if opts['verbose'] and counter % opts['plot_every'] == 0:
+                    # Plotting intermediate results
                     metrics = Metrics()
-                    points_to_plot = self._run_batch(
-                        opts,
+                    # --Random samples from the model
+                    points_to_plot = self._session.run(
                         self._generated,
-                        self._noise_ph,
-                        self._noise_for_plots[0:num_plot],
-                        self._bn_ph,
-                        False)
-                    Qz_sample = self._run_batch(
-                        opts,
+                        feed_dict={
+                            self._noise_ph: self._noise_for_plots[0:num_plot],
+                            self._bn_ph: False})
+                    metrics.Qz = self._session.run(
                         self._Qz,
-                        self._real_points_ph,
-                        self._data.data[:1000],
-                        self._bn_ph,
-                        False)
-                    metrics.Qz = Qz_sample
+                        feed_dict={
+                            self._real_points_ph: self._data.data[:1000],
+                            self._bn_ph: False})
                     metrics.Qz_labels = self._data.labels[:1000]
                     metrics.Pz = batch_noise
-                    l2s.append(np.sum((points_to_plot - sample_prev)**2))
+                    # l2s.append(np.sum((points_to_plot - sample_prev)**2))
                     # metrics.l2s = l2s[:]
                     metrics.l2s = losses[:]
                     metrics.make_plots(
@@ -508,15 +505,13 @@ class ImagePot(Pot):
                         np.vstack([points_to_plot, 0 * batch_images[:16], batch_images]),
                         prefix='sample_e%04d_mb%05d_' % (_epoch, _idx))
 
+                    # --Reconstructions for the train and test points
                     points = self._data.data[:16 * 20]
                     reconstructed = self._session.run(
                         self._reconstruct_x,
                         feed_dict={
                             self._real_points_ph: points,
                             self._bn_ph: False})
-                    # metrics.l2s = None
-                    # metrics.Qz = None
-                    # metrics.Pz = None
                     merged = np.vstack([reconstructed, points])
                     r_ptr = 0
                     w_ptr = 0

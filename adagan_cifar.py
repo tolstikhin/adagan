@@ -26,7 +26,7 @@ flags.DEFINE_float("d_learning_rate", 0.0001,
 flags.DEFINE_float("learning_rate", 0.003,
                    "Learning rate for other optimizers [8e-4]")
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
-flags.DEFINE_integer("zdim", 20, "Dimensionality of the latent space [100]")
+flags.DEFINE_integer("zdim", 40, "Dimensionality of the latent space [100]")
 flags.DEFINE_float("init_std", 0.01, "Initial variance for weights [0.02]")
 flags.DEFINE_string("workdir", 'results_cifar10_pot_conv', "Working directory ['results']")
 flags.DEFINE_bool("unrolled", False, "Use unrolled GAN training [True]")
@@ -37,71 +37,84 @@ FLAGS = flags.FLAGS
 
 def main():
     opts = {}
+    # Utility
     opts['random_seed'] = 66
     opts['dataset'] = 'cifar10' # gmm, circle_gmm,  mnist, mnist3 ...
-    opts['conditional'] = False
-    opts['unrolled'] = FLAGS.unrolled # Use Unrolled GAN? (only for images)
-    opts['unrolling_steps'] = 5 # Used only if unrolled = True
     opts['data_dir'] = 'cifar10'
     opts['trained_model_path'] = None #'models'
     opts['mnist_trained_model_file'] = None #'mnist_trainSteps_19999_yhat' # 'mnist_trainSteps_20000'
+    opts['work_dir'] = FLAGS.workdir
+    opts['ckpt_dir'] = 'checkpoints'
+    opts["verbose"] = True
+    opts['tf_run_batch_size'] = 128
+    opts["early_stop"] = -1 # set -1 to run normally
+    opts["plot_every"] = 100
+    opts["save_every_epoch"] = 10
     opts['gmm_max_val'] = 15.
+
+    # Datasets
     opts['toy_dataset_size'] = 10000
     opts['toy_dataset_dim'] = 2
     opts['mnist3_dataset_size'] = 2 * 64 # 64 * 2500
     opts['mnist3_to_channels'] = False # Hide 3 digits of MNIST to channels
     opts['input_normalize_sym'] = False # Normalize data to [-1, 1]
+    opts['gmm_modes_num'] = 5
+
+    # AdaGAN parameters
     opts['adagan_steps_total'] = 1
     opts['samples_per_component'] = 5000
-    opts['work_dir'] = FLAGS.workdir
-    opts['ckpt_dir'] = 'checkpoints'
     opts['is_bagging'] = FLAGS.is_bagging
     opts['beta_heur'] = 'uniform' # uniform, constant
     opts['weights_heur'] = 'theory_star' # theory_star, theory_dagger, topk
     opts['beta_constant'] = 0.5
     opts['topk_constant'] = 0.5
+    opts["mixture_c_epoch_num"] = 5
+    opts["eval_points_num"] = 25600
+    opts['digit_classification_threshold'] = 0.999
+    opts['inverse_metric'] = False # Use metric from the Unrolled GAN paper?
+    opts['inverse_num'] = 100 # Number of real points to inverse.
+    opts['objective'] = None
+
+    # Generative model parameters
     opts["init_std"] = FLAGS.init_std
     opts["init_bias"] = 0.0
     opts['latent_space_distr'] = 'normal' # uniform, normal
+    opts['latent_space_dim'] = FLAGS.zdim
+    opts["gan_epoch_num"] = 200
+    opts['convolutions'] = True
+    opts['d_num_filters'] = 512
+    opts['g_num_filters'] = 1400
+    opts['g_num_layers'] = 2
+    opts['e_num_layers'] = 3
+    opts['conv_filters_dim'] = 5
+    # --GAN specific:
+    opts['conditional'] = False
+    opts['unrolled'] = FLAGS.unrolled # Use Unrolled GAN? (only for images)
+    opts['unrolling_steps'] = 5 # Used only if unrolled = True
+    # --VAE specific
+    opts['vae'] = FLAGS.vae
+    opts['vae_sigma'] = 0.01
+    # --POT specific
+    opts['pot'] = FLAGS.pot
+    opts['pot_pz_std'] = 5
+    opts['pot_lambda'] = 1.
+
+    # Optimizer parameters
     opts['optimizer'] = 'adam' # sgd, adam
     opts["batch_size"] = 100
     opts["d_steps"] = 1
     opts["g_steps"] = 2
-    opts["verbose"] = True
-    opts['tf_run_batch_size'] = 128
-
-    opts['gmm_modes_num'] = 5
-    opts['latent_space_dim'] = FLAGS.zdim
-    opts["gan_epoch_num"] = 200
-    opts["mixture_c_epoch_num"] = 5
+    opts['batch_norm'] = True
+    # "manual" or number (float or int) giving the number of epochs to divide
+    # the learning rate by 10 (converted into an exp decay per epoch).
+    opts['decay_schedule'] = 30
     opts['opt_learning_rate'] = FLAGS.learning_rate
     opts['opt_d_learning_rate'] = FLAGS.d_learning_rate
     opts['opt_g_learning_rate'] = FLAGS.g_learning_rate
     opts["opt_beta1"] = FLAGS.adam_beta1
     opts['batch_norm_eps'] = 1e-05
     opts['batch_norm_decay'] = 0.9
-    opts['d_num_filters'] = 512
-    opts['g_num_filters'] = 1024
-    opts['g_num_layers'] = 2
-    opts['e_num_layers'] = 3
-    opts['conv_filters_dim'] = 5
-    opts["early_stop"] = -1 # set -1 to run normally
-    opts["plot_every"] = 1
-    opts["save_every_epoch"] = 10
-    opts["eval_points_num"] = 25600
-    opts['digit_classification_threshold'] = 0.999
-    opts['inverse_metric'] = False # Use metric from the Unrolled GAN paper?
-    opts['inverse_num'] = 100 # Number of real points to inverse.
-    opts['objective'] = None
-    opts['vae'] = FLAGS.vae
-    opts['pot'] = FLAGS.pot
-    opts['vae_sigma'] = 0.01
-    opts['pot_lambda'] = 1.
-    opts['convolutions'] = True
-    opts['batch_norm'] = True
-    # "manual" or number (float or int) giving the number of epochs to divide
-    # the learning rate by 10 (converted into an exp decay per epoch).
-    opts['decay_schedule'] = "manual"
+
 
     if opts['verbose']:
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(message)s')

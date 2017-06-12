@@ -93,6 +93,7 @@ def main():
     opts['objective'] = None
     opts['vae'] = FLAGS.vae
     opts['pot'] = FLAGS.pot
+    opts['pot_pz_std'] = 2
     opts['vae_sigma'] = 0.01
     opts['pot_lambda'] = 10
     opts['convolutions'] = False

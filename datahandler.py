@@ -56,7 +56,9 @@ class DataHandler(object):
         self.data_shape = None
         self.num_points = None
         self.data = None
+        self.test_data = None
         self.labels = None
+        self.test_labels = None
         self._load_data(opts)
 
     def _load_data(self, opts):
@@ -333,6 +335,8 @@ class DataHandler(object):
         x_test = x_test.transpose(0, 2, 3, 1)
 
         X = np.vstack([x_train, x_test])
+        logging.error(X[0,:,:,:])
+        X = X/255.
         y = np.vstack([y_train, y_test])
 
         seed = 123
@@ -343,8 +347,11 @@ class DataHandler(object):
         np.random.seed()
 
         self.data_shape = (32, 32, 3)
-        self.data = X/255.
-        self.labels = y
-        self.num_points = len(X)
+
+        self.data = X[:-1000]
+        self.test_data = X[-1000:]
+        self.labels = y[:-1000]
+        self.test_labels = y[-1000:]
+        self.num_points = len(self.data)
 
         logging.debug('Loading Done.')
