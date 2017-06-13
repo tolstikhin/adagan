@@ -107,6 +107,8 @@ def main():
     opts["d_steps"] = 1
     opts["g_steps"] = 2
     opts['batch_norm'] = True
+    opts['dropout'] = True
+    opts['dropout_keep_prob'] = 0.5
     opts['recon_loss'] = 'l2'
     # "manual" or number (float or int) giving the number of epochs to divide
     # the learning rate by 10 (converted into an exp decay per epoch).

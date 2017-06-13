@@ -167,7 +167,7 @@ class ImagePot(Pot):
         self._is_training_ph = None
         Pot.__init__(self, opts, data, weights)
 
-    def generator(self, opts, noise, is_training=False, reuse=False):
+    def generator(self, opts, noise, is_training=False, reuse=False, keep_prob=1.):
         """ Decoder actually.
 
         """
@@ -221,6 +221,8 @@ class ImagePot(Pot):
                     if opts['batch_norm']:
                         layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
                     layer_x = tf.nn.relu(layer_x)
+                    if opts['dropout']:
+                        layer_x = tf.nn.dropout(layer_x, keep_prob)
 
                 _out_shape = [batch_size] + list(output_shape)
                 if opts['g_arch'] == 'dcgan':
@@ -257,7 +259,7 @@ class ImagePot(Pot):
 
         return h3
 
-    def encoder(self, opts, input_, is_training=False, reuse=False):
+    def encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
 
         num_units = opts['g_num_filters']
         with tf.variable_scope("ENCODER", reuse=reuse):
@@ -278,6 +280,8 @@ class ImagePot(Pot):
                     if opts['batch_norm']:
                         layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
                     layer_x = tf.nn.relu(layer_x)
+                    if opts['dropout']:
+                        layer_x = tf.nn.dropout(layer_x, keep_prob)
 
                 code = ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
 
@@ -296,11 +300,14 @@ class ImagePot(Pot):
             tf.float32, [None] + [opts['latent_space_dim']], name='noise_ph')
         lr_decay_ph = tf.placeholder(tf.float32)
         bn_ph = tf.placeholder(tf.bool, name='bn_ph')
+        dropout_ph = tf.placeholder(tf.float32, name='dropout_ph')
 
         # Operations
 
-        encoded_training = self.encoder(opts, real_points_ph, is_training=bn_ph)
-        reconstructed_training = self.generator(opts, encoded_training, is_training=bn_ph)
+        encoded_training = self.encoder(
+            opts, real_points_ph, is_training=bn_ph, keep_prob=dropout_ph)
+        reconstructed_training = self.generator(
+            opts, encoded_training, is_training=bn_ph, keep_prob=dropout_ph)
 
         if opts['recon_loss'] == 'l2':
             # c(x,y) = ||x - y||_2
@@ -338,12 +345,14 @@ class ImagePot(Pot):
         d_optim = ops.optimizer(opts, net='d', decay=lr_decay_ph).minimize(loss=d_loss, var_list=d_vars)
         optim = ops.optimizer(opts, net='g', decay=lr_decay_ph).minimize(loss=loss, var_list=eg_vars)
 
-        generated_images = self.generator(opts, noise_ph, is_training=bn_ph, reuse=True)
+        generated_images = self.generator(
+            opts, noise_ph, is_training=bn_ph, reuse=True, keep_prob=dropout_ph)
 
         self._real_points_ph = real_points_ph
         self._noise_ph = noise_ph
         self._lr_decay_ph = lr_decay_ph
         self._bn_ph = bn_ph
+        self._dropout_ph = dropout_ph
         self._optim = optim
         self._d_optim = d_optim
         self._loss = loss
@@ -358,6 +367,7 @@ class ImagePot(Pot):
         tf.add_to_collection('real_points_ph', self._real_points_ph)
         tf.add_to_collection('noise_ph', self._noise_ph)
         tf.add_to_collection('bn_ph', self._bn_ph)
+        tf.add_to_collection('dropout_ph', self._dropout_ph)
         tf.add_to_collection('encoder', self._Qz)
         tf.add_to_collection('decoder', self._generated)
         tf.add_to_collection('disc_logits_Pz', d_logits_Pz)
@@ -423,7 +433,8 @@ class ImagePot(Pot):
                     feed_dict={self._real_points_ph: batch_images,
                                self._noise_ph: batch_noise,
                                self._lr_decay_ph: decay,
-                               self._bn_ph: True})
+                               self._bn_ph: True,
+                               self._dropout_ph: opts['dropout_keep_prob']})
                 losses.append(loss)
 
                 # Update discriminator in Z space
@@ -432,7 +443,8 @@ class ImagePot(Pot):
                     feed_dict={self._real_points_ph: batch_images,
                                self._noise_ph: batch_noise,
                                self._lr_decay_ph: decay,
-                               self._bn_ph: True})
+                               self._bn_ph: True,
+                               self._dropout_ph: opts['dropout_keep_prob']})
                 counter += 1
 
                 if opts['verbose'] and counter % 50 == 0:
@@ -442,7 +454,8 @@ class ImagePot(Pot):
                         [self._loss_reconstruct,
                          self._reconstruct_x],
                         feed_dict={self._real_points_ph: test,
-                                   self._bn_ph: False})
+                                   self._bn_ph: False,
+                                   self._dropout_ph: 1.})
                     debug_str = 'Epoch: %d/%d, batch:%d/%d' % (
                         _epoch+1, opts['gan_epoch_num'], _idx+1, batches_num)
                     debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g]' % (
@@ -474,12 +487,14 @@ class ImagePot(Pot):
                         self._generated,
                         feed_dict={
                             self._noise_ph: self._noise_for_plots[0:num_plot],
-                            self._bn_ph: False})
+                            self._bn_ph: False,
+                            self._dropout_ph: 1.})
                     metrics.Qz = self._session.run(
                         self._Qz,
                         feed_dict={
                             self._real_points_ph: self._data.data[:1000],
-                            self._bn_ph: False})
+                            self._bn_ph: False,
+                            self._dropout_ph: 1.})
                     metrics.Qz_labels = self._data.labels[:1000]
                     metrics.Pz = batch_noise
                     # l2s.append(np.sum((points_to_plot - sample_prev)**2))
@@ -498,7 +513,8 @@ class ImagePot(Pot):
                         self._reconstruct_x,
                         feed_dict={
                             self._real_points_ph: points,
-                            self._bn_ph: False})
+                            self._bn_ph: False,
+                            self._dropout_ph: 1.})
                     merged = np.vstack([reconstructed, points])
                     r_ptr = 0
                     w_ptr = 0
@@ -519,9 +535,10 @@ class ImagePot(Pot):
         """Sample from the trained GAN model.
 
         """
-        noise = opts['pot_pz_std'] * utils.generate_noise(opts, num)
-        sample = self._run_batch(
-            opts, self._generated, self._noise_ph, noise, self._bn_ph, False)
+        # noise = opts['pot_pz_std'] * utils.generate_noise(opts, num)
+        # sample = self._run_batch(
+        #     opts, self._generated, self._noise_ph, noise, self._bn_ph, False)
+        sample = None
         return sample
 
 
