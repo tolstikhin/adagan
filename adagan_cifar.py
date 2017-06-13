@@ -26,7 +26,7 @@ flags.DEFINE_float("d_learning_rate", 0.0001,
 flags.DEFINE_float("learning_rate", 0.003,
                    "Learning rate for other optimizers [8e-4]")
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
-flags.DEFINE_integer("zdim", 40, "Dimensionality of the latent space [100]")
+flags.DEFINE_integer("zdim", 50, "Dimensionality of the latent space [100]")
 flags.DEFINE_float("init_std", 0.01, "Initial variance for weights [0.02]")
 flags.DEFINE_string("workdir", 'results_cifar10_pot_conv', "Working directory ['results']")
 flags.DEFINE_bool("unrolled", False, "Use unrolled GAN training [True]")
@@ -98,8 +98,8 @@ def main():
     opts['vae_sigma'] = 0.01
     # --POT specific
     opts['pot'] = FLAGS.pot
-    opts['pot_pz_std'] = 5
-    opts['pot_lambda'] = 1.
+    opts['pot_pz_std'] = 8.
+    opts['pot_lambda'] = 10.
 
     # Optimizer parameters
     opts['optimizer'] = 'adam' # sgd, adam

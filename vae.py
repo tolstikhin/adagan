@@ -30,7 +30,6 @@ class Vae(object):
         self._noise_for_plots = utils.generate_noise(opts, 500)
         # Placeholders
         self._real_points_ph = None
-        self._fake_points_ph = None
         self._noise_ph = None
 
         # Main operations
@@ -243,6 +242,7 @@ class ImageVae(Vae):
             h2 = ops.conv2d(opts, h1, num_filters * 4, scope='h2_conv')
             h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
             h2 = ops.lrelu(h2)
+            # Already has NaNs!!
             latent_mean = ops.linear(opts, h2, opts['latent_space_dim'], scope='h3_lin')
             log_latent_sigmas = ops.linear(opts, h2, opts['latent_space_dim'], scope='h3_lin_sigma')
 
@@ -257,8 +257,6 @@ class ImageVae(Vae):
         # Placeholders
         real_points_ph = tf.placeholder(
             tf.float32, [None] + list(data_shape), name='real_points_ph')
-        fake_points_ph = tf.placeholder(
-            tf.float32, [None] + list(data_shape), name='fake_points_ph')
         noise_ph = tf.placeholder(
             tf.float32, [None] + [opts['latent_space_dim']], name='noise_ph')
         is_training_ph = tf.placeholder(tf.bool, name='is_train_ph')
@@ -291,7 +289,6 @@ class ImageVae(Vae):
                                           is_training_ph, reuse=True)
 
         self._real_points_ph = real_points_ph
-        self._fake_points_ph = fake_points_ph
         self._noise_ph = noise_ph
         self._is_training_ph = is_training_ph
         self._optim = optim
