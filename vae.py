@@ -44,7 +44,7 @@ class Vae(object):
         self.optim = None
 
         with self._session.as_default(), self._session.graph.as_default():
-            logging.debug('Building the graph...')
+            logging.error('Building the graph...')
             self._build_model_internal(opts)
 
         # Make sure AdamOptimizer, if used in the Graph, is defined before
@@ -57,9 +57,9 @@ class Vae(object):
 
     def __exit__(self, exc_type, exc_value, traceback):
         # Cleaning the whole default Graph
-        logging.debug('Cleaning the graph...')
+        logging.error('Cleaning the graph...')
         tf.reset_default_graph()
-        logging.debug('Closing the session...')
+        logging.error('Closing the session...')
         # Finishing the session
         self._session.close()
 
@@ -267,11 +267,11 @@ class ImageVae(Vae):
         latent_x_mean, log_latent_sigmas = self.discriminator(
             opts, real_points_ph, is_training_ph)
         scaled_noise = tf.multiply(tf.sqrt(tf.exp(log_latent_sigmas)), noise_ph)
-        scaled_noise = tf.Print(scaled_noise, [scaled_noise], 'Scaled noise:')
+        #scaled_noise = tf.Print(scaled_noise, [scaled_noise], 'Scaled noise:')
         reconstruct_x = self.generator(opts, latent_x_mean + scaled_noise,
                                        is_training_ph)
         dec_enc_x = self.generator(opts, latent_x_mean, False, reuse=True)
-        latent_x_mean = tf.Print(latent_x_mean, [latent_x_mean], 'Q(X)')
+        #latent_x_mean = tf.Print(latent_x_mean, [latent_x_mean], 'Q(X)')
         loss_kl = 0.5 * tf.reduce_sum(
             tf.exp(log_latent_sigmas) +
             tf.square(latent_x_mean) -
@@ -282,7 +282,7 @@ class ImageVae(Vae):
         loss_reconstruct = tf.reduce_mean(loss_reconstruct)
         loss_kl = tf.reduce_mean(loss_kl)
         loss = loss_kl + loss_reconstruct
-        loss = tf.Print(loss, [loss, loss_kl, loss_reconstruct], 'Loss, KL, reconstruct')
+        #loss = tf.Print(loss, [loss, loss_kl, loss_reconstruct], 'Loss, KL, reconstruct')
         optim = ops.optimizer(opts).minimize(loss)
 
         generated_images = self.generator(opts, noise_ph,
@@ -298,7 +298,7 @@ class ImageVae(Vae):
         self._generated = generated_images
         self._reconstruct_x = dec_enc_x
 
-        logging.debug("Building Graph Done.")
+        logging.error("Building Graph Done.")
 
 
     def _train_internal(self, opts):
@@ -313,25 +313,30 @@ class ImageVae(Vae):
         l2s = []
 
         counter = 0
-        logging.debug('Training VAE')
+        logging.error('Training VAE')
         for _epoch in xrange(opts["gan_epoch_num"]):
             for _idx in xrange(batches_num):
-                # logging.debug('Step %d of %d' % (_idx, batches_num ) )
+                # logging.error('Step %d of %d' % (_idx, batches_num ) )
                 data_ids = np.random.choice(train_size, opts['batch_size'],
                                             replace=False, p=self._data_weights)
                 batch_images = self._data.data[data_ids].astype(np.float)
                 batch_noise = utils.generate_noise(opts, opts['batch_size'])
-                _ = self._session.run(
-                    [self._optim, self._loss],
+                _, loss, loss_kl, loss_reconstruct = self._session.run(
+                    [self._optim, self._loss, self._loss_kl,
+                     self._loss_reconstruct],
                     feed_dict={self._real_points_ph: batch_images,
                                self._noise_ph: batch_noise,
                                self._is_training_ph: True})
                 counter += 1
 
+                if opts['verbose'] and counter % 50 == 0:
+                    debug_str = 'Epoch: %d/%d, batch:%d/%d' % (
+                        _epoch+1, opts['gan_epoch_num'], _idx+1, batches_num)
+                    debug_str += '  [L=%.2g, Recon=%.2g, KLQ=%.2g]' % (
+                        loss, loss_reconstruct, loss_kl)
+                    logging.error(debug_str)
+
                 if opts['verbose'] and counter % opts['plot_every'] == 0:
-                    logging.debug(
-                        'Epoch: %d/%d, batch:%d/%d' % \
-                        (_epoch+1, opts['gan_epoch_num'], _idx+1, batches_num))
                     metrics = Metrics()
                     points_to_plot = self._run_batch(
                         opts, self._generated, self._noise_ph,
