@@ -100,6 +100,8 @@ def main():
     opts['pot'] = FLAGS.pot
     opts['pot_pz_std'] = 8.
     opts['pot_lambda'] = 10.
+    opts['z_test'] = 'gan'
+    opts['z_test_corr_w'] = 0.1
 
     # Optimizer parameters
     opts['optimizer'] = 'adam' # sgd, adam

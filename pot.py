@@ -5,7 +5,6 @@
 """This class implements POT training.
 
 """
-
 import logging
 import os
 import tensorflow as tf
@@ -261,6 +260,94 @@ class ImagePot(Pot):
 
         return h3
 
+    def get_batch_size(self, opts, input_):
+        return tf.cast(tf.shape(input_)[0], tf.float32)# opts['batch_size']
+
+    def discriminator_test(self, opts, input_):
+        """Deterministic discriminator using simple tests."""
+        if opts['z_test'] == 'cramer':
+            test_v = self.discriminator_cramer_test(opts, input_)
+        elif opts['z_test'] == 'anderson':
+            test_v = self.discriminator_anderson_test(opts, input_)
+        else:
+            raise ValueError('%s Unknown' % opts['z_test'])
+        corr = self.correlation_loss(opts, input_)
+        return test_v + opts['z_test_corr_w'] * corr
+
+    def discriminator_cramer_test(self, opts, input_):
+        """Deterministic discriminator using Cramer von Mises Test.
+
+        """
+        # top_k can only sort on the last dimension and we want to sort the
+        # first one (batch_size).
+        batch_size = self.get_batch_size(opts, input_)
+        print("bla")
+        print(batch_size)
+        print("bli")
+        transposed = tf.transpose(input_, perm=[1, 0])
+        values, indices = tf.nn.top_k(transposed, k=tf.cast(batch_size, tf.int32))
+        values = tf.reverse(values, [1])
+        #values = tf.Print(values, [values], "sorted values")
+        normal_dist = tf.contrib.distributions.Normal(0., float(opts['pot_pz_std']))
+        #
+        normal_cdf = normal_dist.cdf(values)
+        #normal_cdf = tf.Print(normal_cdf, [normal_cdf], "normal_cdf")
+        expected = (2 * tf.range(1, batch_size+1, 1, dtype="float") - 1) / (2.0 * batch_size)
+        #expected = tf.Print(expected, [expected], "expected")
+        # We don't use the constant.
+        # constant = 1.0 / (12.0 * batch_size * batch_size)
+        # stat = constant + tf.reduce_sum(tf.square(expected - normal_cdf), 1) / batch_size
+        stat = tf.reduce_sum(tf.square(expected - normal_cdf), 1) / batch_size
+        stat = tf.reduce_mean(stat)
+        #stat = tf.Print(stat, [stat], "stat")
+        return stat
+
+    def discriminator_anderson_test(self, opts, input_):
+        """Deterministic discriminator using the Anderson Darling test.
+
+        """
+        # top_k can only sort on the last dimension and we want to sort the
+        # first one (batch_size).
+        batch_size = self.get_batch_size(opts, input_)
+        transposed = tf.transpose(input_, perm=[1, 0])
+        values, indices = tf.nn.top_k(transposed, k=batch_size)
+        values = tf.reverse(values, [1])
+        #values = tf.Print(values, [values], "sorted values")
+        normal_dist = tf.contrib.distributions.Normal(0., float(opts['pot_pz_std']))
+        #
+        normal_cdf = normal_dist.cdf(values)
+        #normal_cdf = tf.Print(normal_cdf, [normal_cdf], "normal_cdf")
+        ln_normal_cdf = tf.log(normal_cdf)
+        ln_one_normal_cdf = tf.log(1.0 - normal_cdf)
+        w1 = 2 * tf.range(1, batch_size+1, 1, dtype="float") - 1
+        w2 = 2 * tf.range(batch_size-1, -1, -1, dtype="float") + 1
+        stat = -batch_size - tf.reduce_sum(w1 * ln_normal_cdf + w2 * ln_one_normal_cdf, 1) / batch_size
+        stat = tf.reduce_mean(stat)
+        #stat = tf.Print(stat, [stat], "stat")
+        return stat
+
+    def correlation_loss(self, opts, input_):
+        batch_size = self.get_batch_size(opts, input_)
+        dim = int(input_.get_shape()[1])
+        transposed = tf.transpose(input_, perm=[1, 0])
+        print(transposed.get_shape())
+        mean = tf.reshape(tf.reduce_mean(transposed, axis=1), [-1, 1])
+        centered_transposed = transposed - mean
+        cov = tf.matmul(centered_transposed, tf.transpose(centered_transposed)) / batch_size
+        #cov = tf.Print(cov, [cov], "cov")
+        sigmas = tf.sqrt(tf.diag_part(cov) + 1e-5)
+        #sigmas = tf.Print(sigmas, [sigmas], "sigmas")
+        sigmas = tf.reshape(sigmas, [1, -1])
+        sigmas = tf.matmul(tf.transpose(sigmas), sigmas)
+        #sigmas = tf.Print(sigmas, [sigmas], "sigmas")
+        corr = cov / sigmas
+        triangle = tf.matrix_set_diag(tf.matrix_band_part(corr, 0, -1), tf.zeros(dim))
+        #triangle = tf.Print(triangle, [triangle], "triangle")
+        loss = tf.reduce_sum(tf.square(triangle)) / ((dim * dim - dim) / 2.0)
+        loss = tf.Print(loss, [loss], "Correlation loss")
+        return loss
+
+
     def encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
 
         num_units = opts['g_num_filters']
@@ -328,17 +415,23 @@ class ImagePot(Pot):
         else:
             assert False
 
-        d_logits_Pz = self.discriminator(opts, noise_ph)
-        d_logits_Qz = self.discriminator(opts, encoded_training, reuse=True)
-        d_loss_Pz = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(
-                logits=d_logits_Pz, labels=tf.ones_like(d_logits_Pz)))
-        d_loss_Qz = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(
-                logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
-        d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
+        if opts['z_test'] == 'gan':
+            d_logits_Pz = self.discriminator(opts, noise_ph)
+            d_logits_Qz = self.discriminator(opts, encoded_training, reuse=True)
+            d_loss_Pz = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(
+                    logits=d_logits_Pz, labels=tf.ones_like(d_logits_Pz)))
+            d_loss_Qz = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(
+                    logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
+            d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
 
-        loss_gan = -d_loss_Qz
+            loss_gan = -d_loss_Qz
+        else:
+            d_loss = None
+            loss_gan = self.discriminator_test(opts, encoded_training)
+            d_logits_Pz = None
+            d_logits_Qz = None
         loss = loss_reconstr + opts['pot_lambda'] * loss_gan
 
 
@@ -348,7 +441,10 @@ class ImagePot(Pot):
         # Updates for encoder and generator
         eg_vars = [var for var in t_vars if 'DISCRIMINATOR/' not in var.name]
 
-        d_optim = ops.optimizer(opts, net='d', decay=lr_decay_ph).minimize(loss=d_loss, var_list=d_vars)
+        if len(d_vars) > 0:
+            d_optim = ops.optimizer(opts, net='d', decay=lr_decay_ph).minimize(loss=d_loss, var_list=d_vars)
+        else:
+            d_optim = None
         optim = ops.optimizer(opts, net='g', decay=lr_decay_ph).minimize(loss=loss, var_list=eg_vars)
 
         generated_images = self.generator(
@@ -377,8 +473,10 @@ class ImagePot(Pot):
         tf.add_to_collection('keep_prob_ph', self._is_training_ph)
         tf.add_to_collection('encoder', self._Qz)
         tf.add_to_collection('decoder', self._generated)
-        tf.add_to_collection('disc_logits_Pz', d_logits_Pz)
-        tf.add_to_collection('disc_logits_Qz', d_logits_Qz)
+        if d_logits_Pz is not None:
+            tf.add_to_collection('disc_logits_Pz', d_logits_Pz)
+        if d_logits_Qz is not None:
+            tf.add_to_collection('disc_logits_Qz', d_logits_Qz)
 
         self._saver = saver
 
@@ -444,14 +542,15 @@ class ImagePot(Pot):
                                self._keep_prob_ph: opts['dropout_keep_prob']})
                 losses.append(loss)
 
-                # Update discriminator in Z space
-                _ = self._session.run(
-                    [self._d_optim, self._d_loss],
-                    feed_dict={self._real_points_ph: batch_images,
-                               self._noise_ph: batch_noise,
-                               self._lr_decay_ph: decay,
-                               self._is_training_ph: True,
-                               self._keep_prob_ph: opts['dropout_keep_prob']})
+                # Update discriminator in Z space (if any).
+                if self._d_optim is not None:
+                    _ = self._session.run(
+                        [self._d_optim, self._d_loss],
+                        feed_dict={self._real_points_ph: batch_images,
+                                   self._noise_ph: batch_noise,
+                                   self._lr_decay_ph: decay,
+                                   self._is_training_ph: True,
+                                   self._keep_prob_ph: opts['dropout_keep_prob']})
                 counter += 1
 
                 if opts['verbose'] and counter % 100 == 0:
@@ -547,6 +646,3 @@ class ImagePot(Pot):
         #     opts, self._generated, self._noise_ph, noise, self._is_training_ph, False)
         sample = None
         return sample
-
-
-
