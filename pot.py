@@ -221,9 +221,9 @@ class ImagePot(Pot):
                         layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
                     layer_x = tf.nn.relu(layer_x)
                     if opts['dropout']:
-                        keep_prob = tf.minimum(
-                            1., 0.9 - (0.9 - keep_prob) * float(i) / (num_layers - 1))
-                        layer_x = tf.nn.dropout(layer_x, keep_prob)
+                        _keep_prob = tf.minimum(
+                            1., 0.9 - (0.9 - keep_prob) * float(i + 1) / (num_layers - 1))
+                        layer_x = tf.nn.dropout(layer_x, _keep_prob)
 
                 _out_shape = [batch_size] + list(output_shape)
                 if opts['g_arch'] == 'dcgan':
@@ -367,9 +367,9 @@ class ImagePot(Pot):
                         layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
                     layer_x = tf.nn.relu(layer_x)
                     if opts['dropout']:
-                        keep_prob = tf.minimum(
-                            1., 0.9 - (0.9 - keep_prob) * float(i) / (num_layers - 1))
-                        layer_x = tf.nn.dropout(layer_x, keep_prob)
+                        _keep_prob = tf.minimum(
+                            1., 0.9 - (0.9 - keep_prob) * float(i + 1) / num_layers)
+                        layer_x = tf.nn.dropout(layer_x, _keep_prob)
 
                 code = ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
 
