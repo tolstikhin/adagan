@@ -524,8 +524,8 @@ class Metrics(object):
         dpi = 100
         height_pic = image.shape[0]
         width_pic = image.shape[1]
-        height = height_pic / float(dpi)
-        width = width_pic / float(dpi)
+        height = 3 * height_pic / float(dpi)
+        width = 3 * width_pic / float(dpi)
 
         if self.l2s is None:
             fig = plt.figure(figsize=(width, height))#, dpi=1)

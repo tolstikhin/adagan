@@ -281,9 +281,6 @@ class ImagePot(Pot):
         # top_k can only sort on the last dimension and we want to sort the
         # first one (batch_size).
         batch_size = self.get_batch_size(opts, input_)
-        print("bla")
-        print(batch_size)
-        print("bli")
         transposed = tf.transpose(input_, perm=[1, 0])
         values, indices = tf.nn.top_k(transposed, k=tf.cast(batch_size, tf.int32))
         values = tf.reverse(values, [1])
@@ -344,7 +341,7 @@ class ImagePot(Pot):
         triangle = tf.matrix_set_diag(tf.matrix_band_part(corr, 0, -1), tf.zeros(dim))
         #triangle = tf.Print(triangle, [triangle], "triangle")
         loss = tf.reduce_sum(tf.square(triangle)) / ((dim * dim - dim) / 2.0)
-        loss = tf.Print(loss, [loss], "Correlation loss")
+        #loss = tf.Print(loss, [loss], "Correlation loss")
         return loss
 
 
@@ -378,6 +375,44 @@ class ImagePot(Pot):
 
         return code
 
+    def _data_augmentation(self, opts, real_points, is_training):
+        if not opts['data_augm']:
+            return real_points
+
+        height = int(real_points.get_shape()[1])
+        width = int(real_points.get_shape()[2])
+        depth = int(real_points.get_shape()[3])
+        print(real_points.get_shape())
+        def _distort_func(image):
+            # tf.image.per_image_standardization(image), should we?
+            # Pad with zeros.
+            image = tf.image.resize_image_with_crop_or_pad(
+                image, height+4, width+4)
+            image = tf.random_crop(image, [height, width, depth])
+            image = tf.image.random_flip_left_right(image)
+            image = tf.image.random_brightness(image, max_delta=0.1)
+            image = tf.minimum(tf.maximum(image, 0.0), 1.0)
+            image = tf.image.random_contrast(image, lower=0.8, upper=1.3)
+            image = tf.minimum(tf.maximum(image, 0.0), 1.0)
+            image = tf.image.random_hue(image, 0.08)
+            image = tf.minimum(tf.maximum(image, 0.0), 1.0)
+            image = tf.image.random_saturation(image, lower=0.8, upper=1.3)
+            image = tf.minimum(tf.maximum(image, 0.0), 1.0)
+            return image
+
+        def _regular_func(image):
+            # tf.image.per_image_standardization(image)?
+            return image
+
+        distorted_images = tf.cond(
+            is_training,
+            lambda: tf.map_fn(_distort_func, real_points,
+                              parallel_iterations=100),
+            lambda: tf.map_fn(_regular_func, real_points,
+                              parallel_iterations=100))
+
+        return distorted_images
+
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to POT implementation.
 
@@ -394,9 +429,10 @@ class ImagePot(Pot):
         keep_prob_ph = tf.placeholder(tf.float32, name='keep_prob_ph')
 
         # Operations
+        real_points = self._data_augmentation(opts, real_points_ph, is_training_ph)
 
         encoded_training = self.encoder(
-            opts, real_points_ph,
+            opts, real_points,
             is_training=is_training_ph, keep_prob=keep_prob_ph)
         reconstructed_training = self.generator(
             opts, encoded_training,
@@ -405,13 +441,13 @@ class ImagePot(Pot):
         if opts['recon_loss'] == 'l2':
             # c(x,y) = ||x - y||_2
             loss_reconstr = tf.reduce_sum(
-                tf.square(real_points_ph - reconstructed_training), axis=1)
+                tf.square(real_points - reconstructed_training), axis=1)
             # sqrt(x + delta) guarantees the direvative 1/(x + delta) is finite
             loss_reconstr = tf.reduce_mean(tf.sqrt(loss_reconstr + 1e-08))
         elif opts['recon_loss'] == 'l1':
             # c(x,y) = ||x - y||_1
             loss_reconstr = tf.reduce_mean(tf.reduce_sum(
-                tf.abs(real_points_ph - reconstructed_training), axis=1))
+                tf.abs(real_points - reconstructed_training), axis=1))
         else:
             assert False
 
@@ -553,6 +589,7 @@ class ImagePot(Pot):
                                    self._keep_prob_ph: opts['dropout_keep_prob']})
                 counter += 1
 
+                rec_test = None
                 if opts['verbose'] and counter % 100 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data
@@ -570,10 +607,10 @@ class ImagePot(Pot):
                     if counter % opts['plot_every'] == 0:
                         # plotting the test images.
                         metrics = Metrics()
-                        merged = np.vstack([rec_test[:16 * 20], test[:16 * 20]])
+                        merged = np.vstack([rec_test[:8 * 10], test[:8 * 10]])
                         r_ptr = 0
                         w_ptr = 0
-                        for _ in range(16 * 20):
+                        for _ in range(8 * 10):
                             merged[w_ptr] = test[r_ptr]
                             merged[w_ptr + 1] = rec_test[r_ptr]
                             r_ptr += 1
@@ -606,15 +643,18 @@ class ImagePot(Pot):
                     # l2s.append(np.sum((points_to_plot - sample_prev)**2))
                     # metrics.l2s = l2s[:]
                     metrics.l2s = losses[:]
+                    to_plot = [points_to_plot, 0 * batch_images[:16], batch_images]
+                    if rec_test is not None:
+                        to_plot += [0 * batch_images[:16], rec_test[:64]]
                     metrics.make_plots(
                         opts,
                         counter,
                         None,
-                        np.vstack([points_to_plot, 0 * batch_images[:16], batch_images]),
+                        np.vstack(to_plot),
                         prefix='sample_e%04d_mb%05d_' % (_epoch, _idx))
 
                     # --Reconstructions for the train and test points
-                    points = self._data.data[:16 * 20]
+                    points = self._data.data[:8 * 10]
                     reconstructed = self._session.run(
                         self._reconstruct_x,
                         feed_dict={
@@ -624,7 +664,7 @@ class ImagePot(Pot):
                     merged = np.vstack([reconstructed, points])
                     r_ptr = 0
                     w_ptr = 0
-                    for _ in range(16 * 20):
+                    for _ in range(8 * 10):
                         merged[w_ptr] = points[r_ptr]
                         merged[w_ptr + 1] = reconstructed[r_ptr]
                         r_ptr += 1
