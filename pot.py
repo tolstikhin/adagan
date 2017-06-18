@@ -166,6 +166,111 @@ class ImagePot(Pot):
         self._is_training_ph = None
         Pot.__init__(self, opts, data, weights)
 
+
+    def dcgan_like_arch(self, opts, noise, is_training, reuse, keep_prob):
+        output_shape = self._data.data_shape
+        num_units = opts['g_num_filters']
+
+        batch_size = tf.shape(noise)[0]
+        num_layers = opts['g_num_layers']
+        if opts['g_arch'] == 'dcgan':
+            height = output_shape[0] / 2**num_layers
+            width = output_shape[1] / 2**num_layers
+        elif opts['g_arch'] == 'dcgan_mod':
+            height = output_shape[0] / 2**(num_layers-1)
+            width = output_shape[1] / 2**(num_layers-1)
+        else:
+            assert False
+
+        h0 = ops.linear(
+            opts, noise, num_units * height * width, scope='h0_lin')
+        h0 = tf.reshape(h0, [-1, height, width, num_units])
+        h0 = tf.nn.relu(h0)
+        layer_x = h0
+        for i in xrange(num_layers-1):
+            scale = 2**(i+1)
+            if opts['g_stride1_deconv']:
+                # Sylvain, I'm worried about this part!
+                _out_shape = [batch_size, height * scale / 2,
+                              width * scale / 2, num_units / scale * 2]
+                layer_x = ops.deconv2d(
+                    opts, layer_x, _out_shape, d_h=1, d_w=1,
+                    scope='h%d_deconv_1x1' % i)
+                layer_x = tf.nn.relu(layer_x)
+            _out_shape = [batch_size, height * scale, width * scale, num_units / scale]
+            layer_x = ops.deconv2d(opts, layer_x, _out_shape, scope='h%d_deconv' % i)
+            if opts['batch_norm']:
+                layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
+            layer_x = tf.nn.relu(layer_x)
+            if opts['dropout']:
+                _keep_prob = tf.minimum(
+                    1., 0.9 - (0.9 - keep_prob) * float(i + 1) / (num_layers - 1))
+                layer_x = tf.nn.dropout(layer_x, _keep_prob)
+
+        _out_shape = [batch_size] + list(output_shape)
+        if opts['g_arch'] == 'dcgan':
+            last_h = ops.deconv2d(
+                opts, layer_x, _out_shape, scope='hlast_deconv')
+        elif opts['g_arch'] == 'dcgan_mod':
+            last_h = ops.deconv2d(
+                opts, layer_x, _out_shape, d_h=1, d_w=1, scope='hlast_deconv')
+        else:
+            assert False
+
+        if opts['input_normalize_sym']:
+            return tf.nn.tanh(last_h)
+        else:
+            return tf.nn.sigmoid(last_h)
+
+    def conv_up_res(self, opts, noise, is_training, reuse, keep_prob):
+        output_shape = self._data.data_shape
+        num_units = opts['g_num_filters']
+
+        batch_size = tf.shape(noise)[0]
+        num_layers = opts['g_num_layers']
+        data_height = output_shape[0]
+        data_width = output_shape[1]
+        data_channels = output_shape[2]
+        height = data_height / 2**num_layers
+        width = data_width / 2**num_layers
+
+        h0 = ops.linear(
+            opts, noise, num_units * height * width, scope='h0_lin')
+        h0 = tf.reshape(h0, [-1, height, width, num_units])
+        h0 = tf.nn.relu(h0)
+        layer_x = h0
+        for i in xrange(num_layers-1):
+            layer_x = tf.image.resize_nearest_neighbor(layer_x, (2 * height, 2 * width))
+            layer_x = ops.conv2d(opts, layer_x, num_units / 2, d_h=1, d_w=1, scope='conv2d_%d' % i)
+            height *= 2
+            width *= 2
+            num_units /= 2
+
+            if opts['g_3x3_conv'] > 0:
+                before = layer_x
+                for j in range(opts['g_3x3_conv']):
+                    layer_x = ops.conv2d(opts, layer_x, num_units, d_h=1, d_w=1,
+                                         scope='conv2d_3x3_%d_%d' % (i, j),
+                                         conv_filters_dim=3)
+                    layer_x = tf.nn.relu(layer_x)
+                layer_x += before  # Residual connection.
+
+            if opts['batch_norm']:
+                layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
+            layer_x = tf.nn.relu(layer_x)
+            if opts['dropout']:
+                _keep_prob = tf.minimum(
+                    1., 0.9 - (0.9 - keep_prob) * float(i + 1) / (num_layers - 1))
+                layer_x = tf.nn.dropout(layer_x, _keep_prob)
+
+        layer_x = tf.image.resize_nearest_neighbor(layer_x, (2 * height, 2 * width))
+        layer_x = ops.conv2d(opts, layer_x, data_channels, d_h=1, d_w=1, scope='last_conv2d_%d' % i)
+
+        if opts['input_normalize_sym']:
+            return tf.nn.tanh(layer_x)
+        else:
+            return tf.nn.sigmoid(layer_x)
+
     def generator(self, opts, noise, is_training=False, reuse=False, keep_prob=1.):
         """ Decoder actually.
 
@@ -188,57 +293,12 @@ class ImagePot(Pot):
                     return tf.nn.tanh(h3)
                 else:
                     return tf.nn.sigmoid(h3)
+            elif opts['g_arch'] in ['dcgan', 'dcgan_mod']:
+                return self.dcgan_like_arch(opts, noise, is_training, reuse, keep_prob)
+            elif opts['g_arch'] == 'conv_up_res':
+                return self.conv_up_res(opts, noise, is_training, reuse, keep_prob)
             else:
-                batch_size = tf.shape(noise)[0]
-                num_layers = opts['g_num_layers']
-                if opts['g_arch'] == 'dcgan':
-                    height = output_shape[0] / 2**num_layers
-                    width = output_shape[1] / 2**num_layers
-                elif opts['g_arch'] == 'dcgan_mod':
-                    height = output_shape[0] / 2**(num_layers-1)
-                    width = output_shape[1] / 2**(num_layers-1)
-                else:
-                    assert False
-
-                h0 = ops.linear(
-                    opts, noise, num_units * height * width, scope='h0_lin')
-                h0 = tf.reshape(h0, [-1, height, width, num_units])
-                h0 = tf.nn.relu(h0)
-                layer_x = h0
-                for i in xrange(num_layers-1):
-                    scale = 2**(i+1)
-                    if opts['g_stride1_deconv']:
-                        # Sylvain, I'm worried about this part!
-                        _out_shape = [batch_size, height * scale / 2,
-                                      width * scale / 2, num_units / scale * 2]
-                        layer_x = ops.deconv2d(
-                            opts, layer_x, _out_shape, d_h=1, d_w=1,
-                            scope='h%d_deconv_1x1' % i)
-                        layer_x = tf.nn.relu(layer_x)
-                    _out_shape = [batch_size, height * scale, width * scale, num_units / scale]
-                    layer_x = ops.deconv2d(opts, layer_x, _out_shape, scope='h%d_deconv' % i)
-                    if opts['batch_norm']:
-                        layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
-                    layer_x = tf.nn.relu(layer_x)
-                    if opts['dropout']:
-                        _keep_prob = tf.minimum(
-                            1., 0.9 - (0.9 - keep_prob) * float(i + 1) / (num_layers - 1))
-                        layer_x = tf.nn.dropout(layer_x, _keep_prob)
-
-                _out_shape = [batch_size] + list(output_shape)
-                if opts['g_arch'] == 'dcgan':
-                    last_h = ops.deconv2d(
-                        opts, layer_x, _out_shape, scope='hlast_deconv')
-                elif opts['g_arch'] == 'dcgan_mod':
-                    last_h = ops.deconv2d(
-                        opts, layer_x, _out_shape, d_h=1, d_w=1, scope='hlast_deconv')
-                else:
-                    assert False
-
-                if opts['input_normalize_sym']:
-                    return tf.nn.tanh(last_h)
-                else:
-                    return tf.nn.sigmoid(last_h)
+                raise ValueError('%s unknown' % opts['g_arch'])
 
     def discriminator(self, opts, input_, prefix='DISCRIMINATOR', reuse=False):
         """Discriminator for the GAN objective
@@ -488,6 +548,7 @@ class ImagePot(Pot):
             reuse=True, keep_prob=keep_prob_ph)
 
         self._real_points_ph = real_points_ph
+        self._real_points = real_points
         self._noise_ph = noise_ph
         self._lr_decay_ph = lr_decay_ph
         self._is_training_ph = is_training_ph
@@ -654,13 +715,13 @@ class ImagePot(Pot):
                         prefix='sample_e%04d_mb%05d_' % (_epoch, _idx))
 
                     # --Reconstructions for the train and test points
-                    points = self._data.data[:8 * 10]
-                    reconstructed = self._session.run(
-                        self._reconstruct_x,
+                    reconstructed, real_p = self._session.run(
+                        [self._reconstruct_x, self._real_points],
                         feed_dict={
-                            self._real_points_ph: points,
-                            self._is_training_ph: False,
+                            self._real_points_ph: self._data.data[:8 * 10],
+                            self._is_training_ph: True,
                             self._keep_prob_ph: 1e5})
+                    points = real_p
                     merged = np.vstack([reconstructed, points])
                     r_ptr = 0
                     w_ptr = 0

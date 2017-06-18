@@ -63,7 +63,7 @@ def linear(opts, input_, output_dim, scope=None, init='normal'):
 
     return tf.matmul(input_, matrix) + bias
 
-def conv2d(opts, input_, output_dim, d_h=2, d_w=2, scope=None):
+def conv2d(opts, input_, output_dim, d_h=2, d_w=2, scope=None, conv_filters_dim=None):
     """Convolutional layer.
 
     Args:
@@ -74,7 +74,9 @@ def conv2d(opts, input_, output_dim, d_h=2, d_w=2, scope=None):
     stddev = opts['init_std']
     bias_start = opts['init_bias']
     shape = input_.get_shape().as_list()
-    k_h = opts['conv_filters_dim']
+    if conv_filters_dim is None:
+        conv_filters_dim = opts['conv_filters_dim']
+    k_h = conv_filters_dim
     k_w = k_h
 
     assert len(shape) == 4, 'Conv2d works only with 4d tensors.'
