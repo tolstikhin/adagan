@@ -323,25 +323,57 @@ class ImagePot(Pot):
     def get_batch_size(self, opts, input_):
         return tf.cast(tf.shape(input_)[0], tf.float32)# opts['batch_size']
 
+    def moments_stats(self, opts, input_):
+        input_ = input_ / opts['pot_pz_std']
+        p1 = tf.reduce_mean(input_, 0)
+        center_inp = input_ - p1
+        p2 = tf.sqrt(1e-5 + tf.reduce_mean(tf.square(center_inp), 0))
+        normed_inp = center_inp / p2
+        p3 = tf.pow(1e-5 + tf.abs(tf.reduce_mean(tf.pow(normed_inp, 3), 0)), 1.0 / 3.0)
+        # Because 3 is the right Kurtosis for N(0, 1)
+        p4 = tf.pow(1e-5 + tf.reduce_mean(tf.pow(normed_inp, 4), 0) / 3.0, 1.0 / 4.0)
+        def zero_t(v):
+            return tf.sqrt(1e-5 + tf.reduce_mean(tf.square(v)))
+        def one_t(v):
+            return tf.sqrt(1e-5 + tf.reduce_mean(tf.maximum(tf.square(v), 1.0 / (1e-5 + tf.square(v)))))
+        return tf.stack([zero_t(p1), one_t(p2), zero_t(p3), one_t(p4)])
+#         return tf.stack([mse(p1), mse(p2), mse(p3), mse(p4)])
+
     def discriminator_test(self, opts, input_):
         """Deterministic discriminator using simple tests."""
         if opts['z_test'] == 'cramer':
             test_v = self.discriminator_cramer_test(opts, input_)
         elif opts['z_test'] == 'anderson':
             test_v = self.discriminator_anderson_test(opts, input_)
+        elif opts['z_test'] == 'moments':
+            test_v = tf.reduce_mean(self.moments_stats(opts, input_)) / 10.0
         else:
             raise ValueError('%s Unknown' % opts['z_test'])
         corr = self.correlation_loss(opts, input_)
-        return test_v + opts['z_test_corr_w'] * corr
+        return test_v + opts['z_test_corr_w'] * corr, corr
 
     def discriminator_cramer_test(self, opts, input_):
         """Deterministic discriminator using Cramer von Mises Test.
 
         """
+        add_dim = opts['z_test_proj_dim']
+        if add_dim > 0:
+            dim = int(input_.get_shape()[1])
+            proj = np.random.rand(dim, add_dim)
+            proj = proj - np.mean(proj, 0)
+            norms = np.sqrt(np.sum(np.square(proj), 0) + 1e-5)
+            proj = tf.constant(proj / norms, dtype=tf.float32)
+            projected_x = tf.matmul(input_, proj)  # Shape [batch_size, add_dim].
+
+            # Shape [batch_size, z_dim+add_dim]
+            all_dims_x = tf.concat([input_, projected_x], 1)
+        else:
+            all_dims_x = input_
+
         # top_k can only sort on the last dimension and we want to sort the
         # first one (batch_size).
-        batch_size = self.get_batch_size(opts, input_)
-        transposed = tf.transpose(input_, perm=[1, 0])
+        batch_size = self.get_batch_size(opts, all_dims_x)
+        transposed = tf.transpose(all_dims_x, perm=[1, 0])
         values, indices = tf.nn.top_k(transposed, k=tf.cast(batch_size, tf.int32))
         values = tf.reverse(values, [1])
         #values = tf.Print(values, [values], "sorted values")
@@ -367,7 +399,7 @@ class ImagePot(Pot):
         # first one (batch_size).
         batch_size = self.get_batch_size(opts, input_)
         transposed = tf.transpose(input_, perm=[1, 0])
-        values, indices = tf.nn.top_k(transposed, k=batch_size)
+        values, indices = tf.nn.top_k(transposed, k=tf.cast(batch_size, tf.int32))
         values = tf.reverse(values, [1])
         #values = tf.Print(values, [values], "sorted values")
         normal_dist = tf.contrib.distributions.Normal(0., float(opts['pot_pz_std']))
@@ -423,6 +455,7 @@ class ImagePot(Pot):
                 for i in xrange(num_layers):
                     scale = 2**(num_layers-i-1)
                     layer_x = ops.conv2d(opts, layer_x, num_units / scale, scope='h%d_conv' % i)
+
                     if opts['batch_norm']:
                         layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
                     layer_x = tf.nn.relu(layer_x)
@@ -430,6 +463,15 @@ class ImagePot(Pot):
                         _keep_prob = tf.minimum(
                             1., 0.9 - (0.9 - keep_prob) * float(i + 1) / num_layers)
                         layer_x = tf.nn.dropout(layer_x, _keep_prob)
+
+                    if opts['e_3x3_conv'] > 0:
+                        before = layer_x
+                        for j in range(opts['e_3x3_conv']):
+                            layer_x = ops.conv2d(opts, layer_x, num_units / scale, d_h=1, d_w=1,
+                                                 scope='conv2d_3x3_%d_%d' % (i, j),
+                                                 conv_filters_dim=3)
+                            layer_x = tf.nn.relu(layer_x)
+                        layer_x += before  # Residual connection.
 
                 code = ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
 
@@ -525,9 +567,10 @@ class ImagePot(Pot):
             loss_gan = -d_loss_Qz
         else:
             d_loss = None
-            loss_gan = self.discriminator_test(opts, encoded_training)
+            loss_gan, loss_z_corr = self.discriminator_test(opts, encoded_training)
             d_logits_Pz = None
             d_logits_Qz = None
+        g_mom_stats = self.moments_stats(opts, encoded_training)
         loss = loss_reconstr + opts['pot_lambda'] * loss_gan
 
 
@@ -558,6 +601,8 @@ class ImagePot(Pot):
         self._loss = loss
         self._loss_reconstruct = loss_reconstr
         self._loss_gan = loss_gan
+        self._loss_z_corr = loss_z_corr
+        self._g_mom_stats = g_mom_stats
         self._d_loss = d_loss
         self._generated = generated_images
         self._Qz = encoded_training
@@ -654,9 +699,9 @@ class ImagePot(Pot):
                 if opts['verbose'] and counter % 100 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data
-                    [loss_rec_test, rec_test] = self._session.run(
+                    [loss_rec_test, rec_test, g_mom_stats, loss_z_corr] = self._session.run(
                         [self._loss_reconstruct,
-                         self._reconstruct_x],
+                         self._reconstruct_x, self._g_mom_stats, self._loss_z_corr],
                         feed_dict={self._real_points_ph: test,
                                    self._is_training_ph: False,
                                    self._keep_prob_ph: 1e5})
@@ -665,6 +710,9 @@ class ImagePot(Pot):
                     debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g]' % (
                         loss, loss_rec, loss_gan, loss_rec_test)
                     logging.error(debug_str)
+                    if opts['verbose'] >= 2:
+                        logging.error(g_mom_stats)
+                        logging.error(loss_z_corr)
                     if counter % opts['plot_every'] == 0:
                         # plotting the test images.
                         metrics = Metrics()
