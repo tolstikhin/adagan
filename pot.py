@@ -306,19 +306,15 @@ class ImagePot(Pot):
         """
 
         num_units = opts['d_num_filters']
+        num_layers = opts['d_num_layers']
         # No convolutions as GAN happens in the latent space
         with tf.variable_scope(prefix, reuse=reuse):
-            h0 = ops.linear(opts, input_, num_units, scope='h0_lin')
-            # h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
-            h0 = tf.nn.relu(h0)
-            h1 = ops.linear(opts, h0, num_units, scope='h1_lin')
-            # h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
-            h1 = tf.nn.relu(h1)
-            h2 = ops.linear(opts, h1, num_units, scope='h2_lin')
-            h2 = tf.nn.relu(h2)
-            h3 = ops.linear(opts, h2, 1, scope='h3_lin')
+            hi = ops.linear(opts, input_, num_units, scope='h0_lin')
+            for i in range(num_layers-1):
+                hi = tf.nn.relu(hi)
+                hi = ops.linear(opts, hi, num_units, scope='h%d_lin' % (i+1))
 
-        return h3
+        return hi
 
     def get_batch_size(self, opts, input_):
         return tf.cast(tf.shape(input_)[0], tf.float32)# opts['batch_size']
@@ -349,8 +345,7 @@ class ImagePot(Pot):
             test_v = tf.reduce_mean(self.moments_stats(opts, input_)) / 10.0
         else:
             raise ValueError('%s Unknown' % opts['z_test'])
-        corr = self.correlation_loss(opts, input_)
-        return test_v + opts['z_test_corr_w'] * corr, corr
+        return test_v
 
     def discriminator_cramer_test(self, opts, input_):
         """Deterministic discriminator using Cramer von Mises Test.
@@ -553,6 +548,7 @@ class ImagePot(Pot):
         else:
             assert False
 
+        loss_z_corr = self.correlation_loss(opts, encoded_training)
         if opts['z_test'] == 'gan':
             d_logits_Pz = self.discriminator(opts, noise_ph)
             d_logits_Qz = self.discriminator(opts, encoded_training, reuse=True)
@@ -567,7 +563,8 @@ class ImagePot(Pot):
             loss_gan = -d_loss_Qz
         else:
             d_loss = None
-            loss_gan, loss_z_corr = self.discriminator_test(opts, encoded_training)
+            loss_gan = self.discriminator_test(opts, encoded_training)
+            loss_gan = loss_gan + opts['z_test_corr_w'] * loss_z_corr
             d_logits_Pz = None
             d_logits_Qz = None
         g_mom_stats = self.moments_stats(opts, encoded_training)

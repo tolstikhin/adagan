@@ -83,6 +83,7 @@ def main():
     opts["gan_epoch_num"] = 200
     opts['convolutions'] = True
     opts['d_num_filters'] = 512
+    opts['d_num_layers'] = 4
     opts['g_num_filters'] = 1024
     opts['g_num_layers'] = 3
     opts['e_num_layers'] = 3
