@@ -32,6 +32,7 @@ flags.DEFINE_string("workdir", 'results_cifar10_pot_conv', "Working directory ['
 flags.DEFINE_bool("unrolled", False, "Use unrolled GAN training [True]")
 flags.DEFINE_bool("vae", False, "Use VAE instead of GAN")
 flags.DEFINE_bool("pot", True, "Use POT instead of GAN")
+flags.DEFINE_float("pot_lambda", 1., "POT regularization")
 flags.DEFINE_bool("is_bagging", False, "Do we want to use bagging instead of adagan? [False]")
 FLAGS = flags.FLAGS
 
@@ -101,8 +102,8 @@ def main():
     opts['vae_sigma'] = 0.01
     # --POT specific
     opts['pot'] = FLAGS.pot
-    opts['pot_pz_std'] = 8.
-    opts['pot_lambda'] = 10.
+    opts['pot_pz_std'] = 2.
+    opts['pot_lambda'] = FLAGS.pot_lambda
     opts['z_test'] = 'gan'
     opts['z_test_corr_w'] = 0.1
     opts['z_test_proj_dim'] = 50
@@ -118,7 +119,7 @@ def main():
     opts['recon_loss'] = 'l2'
     # "manual" or number (float or int) giving the number of epochs to divide
     # the learning rate by 10 (converted into an exp decay per epoch).
-    opts['decay_schedule'] = 30
+    opts['decay_schedule'] = 60
     opts['opt_learning_rate'] = FLAGS.learning_rate
     opts['opt_d_learning_rate'] = FLAGS.d_learning_rate
     opts['opt_g_learning_rate'] = FLAGS.g_learning_rate
