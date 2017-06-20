@@ -46,7 +46,7 @@ def main():
     opts['mnist_trained_model_file'] = None #'mnist_trainSteps_19999_yhat' # 'mnist_trainSteps_20000'
     opts['work_dir'] = FLAGS.workdir
     opts['ckpt_dir'] = 'checkpoints'
-    opts["verbose"] = True
+    opts["verbose"] = 1
     opts['tf_run_batch_size'] = 128
     opts["early_stop"] = -1 # set -1 to run normally
     opts["plot_every"] = 150
@@ -90,6 +90,7 @@ def main():
     opts['g_arch'] = 'dcgan_mod'
     opts['g_stride1_deconv'] = False
     opts['g_3x3_conv'] = 0
+    opts['e_3x3_conv'] = 0
     opts['conv_filters_dim'] = 5
     # --GAN specific:
     opts['conditional'] = False
@@ -104,6 +105,7 @@ def main():
     opts['pot_lambda'] = FLAGS.pot_lambda
     opts['z_test'] = 'gan'
     opts['z_test_corr_w'] = 0.1
+    opts['z_test_proj_dim'] = 50
 
     # Optimizer parameters
     opts['optimizer'] = 'adam' # sgd, adam
