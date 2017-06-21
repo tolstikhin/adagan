@@ -23,7 +23,7 @@ def batch_norm(opts, _input, is_train, reuse, scope, scale=True):
         is_training=is_train, reuse=reuse, updates_collections=None,
         scope=scope, fused=False)
 
-def linear(opts, input_, output_dim, scope=None, init='normal'):
+def linear(opts, input_, output_dim, scope=None, init='normal', reuse=None):
     """Fully connected linear layer.
 
     Args:
@@ -47,7 +47,7 @@ def linear(opts, input_, output_dim, scope=None, init='normal'):
         input_ = tf.reshape(input_, [-1, np.prod(shape[1:])])
         in_shape = np.prod(shape[1:])
 
-    with tf.variable_scope(scope or "lin"):
+    with tf.variable_scope(scope or "lin", reuse=reuse):
         if init == 'normal':
             matrix = tf.get_variable(
                 "W", [in_shape, output_dim], tf.float32,

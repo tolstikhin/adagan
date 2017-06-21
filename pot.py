@@ -510,6 +510,31 @@ class ImagePot(Pot):
 
         return distorted_images
 
+    def _recon_loss_using_disc_encoder(self, opts, reconstructed_training, encoded_training, real_points, is_training_ph, keep_prob_ph):
+        """Build an additional loss using the encoder as discriminator."""
+        reconstructed_reencoded_sg = self.encoder(
+            opts, tf.stop_gradient(reconstructed_training), is_training=is_training_ph, keep_prob=keep_prob_ph, reuse=True)
+        reconstructed_reencoded = self.encoder(
+            opts, reconstructed_training, is_training=is_training_ph, keep_prob=keep_prob_ph, reuse=True)
+        # Below line enforces the forward to be reconstructed_reencoded and backwards to NOT change the encoder....
+        crazy_hack = reconstructed_reencoded-reconstructed_reencoded_sg+tf.stop_gradient(reconstructed_reencoded_sg)
+        encoded_training_sg = self.encoder(
+            opts, tf.stop_gradient(real_points),
+            is_training=is_training_ph, keep_prob=keep_prob_ph, reuse=True)
+
+        adv_fake_layer = ops.linear(opts, reconstructed_reencoded_sg, 1, scope='adv_layer')
+        adv_true_layer = ops.linear(opts, encoded_training_sg, 1, scope='adv_layer', reuse=True)
+        adv_fake = tf.nn.sigmoid_cross_entropy_with_logits(
+                    logits=adv_fake_layer, labels=tf.zeros_like(adv_fake_layer))
+        adv_true = tf.nn.sigmoid_cross_entropy_with_logits(
+                    logits=adv_true_layer, labels=tf.ones_like(adv_true_layer))
+        adv_fake = tf.reduce_mean(adv_fake)
+        adv_true = tf.reduce_mean(adv_true)
+        adv_c_loss = adv_fake + adv_true
+        emb_c = tf.reduce_sum(tf.square(crazy_hack - tf.stop_gradient(encoded_training)), 1)
+        emb_c_loss = tf.reduce_mean(tf.sqrt(emb_c + 1e-5))
+        return adv_c_loss, emb_c_loss
+
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to POT implementation.
 
@@ -534,6 +559,7 @@ class ImagePot(Pot):
         reconstructed_training = self.generator(
             opts, encoded_training,
             is_training=is_training_ph, keep_prob=keep_prob_ph)
+        reconstructed_training.set_shape(real_points.get_shape())
 
         if opts['recon_loss'] == 'l2':
             # c(x,y) = ||x - y||_2
@@ -570,6 +596,12 @@ class ImagePot(Pot):
         g_mom_stats = self.moments_stats(opts, encoded_training)
         loss = loss_reconstr + opts['pot_lambda'] * loss_gan
 
+        # Optionally, add a discriminator in the X space, reusing the encoder.
+        if opts['adv_c_loss_w'] > 0.0 or opts['emb_c_loss_w'] > 0.0:
+            adv_c_loss, emb_c_loss = self._recon_loss_using_disc_encoder(
+                opts, reconstructed_training, encoded_training, real_points, is_training_ph, keep_prob_ph)
+
+            loss += opts['adv_c_loss_w'] * adv_c_loss + opts['emb_c_loss_w'] * emb_c_loss
 
         t_vars = tf.trainable_variables()
         # Updates for discriminator
