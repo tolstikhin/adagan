@@ -63,7 +63,7 @@ def linear(opts, input_, output_dim, scope=None, init='normal', reuse=None):
 
     return tf.matmul(input_, matrix) + bias
 
-def conv2d(opts, input_, output_dim, d_h=2, d_w=2, scope=None, conv_filters_dim=None):
+def conv2d(opts, input_, output_dim, d_h=2, d_w=2, scope=None, conv_filters_dim=None, padding='SAME'):
     """Convolutional layer.
 
     Args:
@@ -85,7 +85,7 @@ def conv2d(opts, input_, output_dim, d_h=2, d_w=2, scope=None, conv_filters_dim=
         w = tf.get_variable(
             'filter', [k_h, k_w, shape[-1], output_dim],
             initializer=tf.truncated_normal_initializer(stddev=stddev))
-        conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding='SAME')
+        conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding=padding)
         biases = tf.get_variable(
             'b', [output_dim],
             initializer=tf.constant_initializer(bias_start))
@@ -93,14 +93,16 @@ def conv2d(opts, input_, output_dim, d_h=2, d_w=2, scope=None, conv_filters_dim=
 
     return conv
 
-def deconv2d(opts, input_, output_shape, d_h=2, d_w=2, scope=None):
+def deconv2d(opts, input_, output_shape, d_h=2, d_w=2, scope=None, conv_filters_dim=None, padding='SAME'):
     """Transposed convolution (fractional stride convolution) layer.
 
     """
 
     stddev = opts['init_std']
     shape = input_.get_shape().as_list()
-    k_h = opts['conv_filters_dim']
+    if conv_filters_dim is None:
+        conv_filters_dim = opts['conv_filters_dim']
+    k_h = conv_filters_dim
     k_w = k_h
 
     assert len(shape) == 4, 'Conv2d_transpose works only with 4d tensors.'
@@ -112,7 +114,7 @@ def deconv2d(opts, input_, output_shape, d_h=2, d_w=2, scope=None):
             initializer=tf.random_normal_initializer(stddev=stddev))
         deconv = tf.nn.conv2d_transpose(
             input_, w, output_shape=output_shape,
-            strides=[1, d_h, d_w, 1])
+            strides=[1, d_h, d_w, 1], padding=padding)
         biases = tf.get_variable(
             'b', [output_shape[-1]],
             initializer=tf.constant_initializer(0.0))

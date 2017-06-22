@@ -271,6 +271,53 @@ class ImagePot(Pot):
         else:
             return tf.nn.sigmoid(layer_x)
 
+    def ali_deconv(self, opts, noise, is_training, reuse, keep_prob):
+        output_shape = self._data.data_shape
+
+        batch_size = tf.shape(noise)[0]
+        noise_size = int(noise.get_shape()[1])
+        data_height = output_shape[0]
+        data_width = output_shape[1]
+        data_channels = output_shape[2]
+
+        noise = tf.reshape(noise, [-1, 1, 1, noise_size])
+
+        num_units = opts['g_num_filters']
+        layer_params = []
+        layer_params.append([4, 1, num_units])
+        layer_params.append([4, 2, num_units / 2])
+        layer_params.append([4, 1, num_units / 4])
+        layer_params.append([4, 2, num_units / 8])
+        layer_params.append([5, 1, num_units / 8])
+        # For convolution: (n - k) / stride + 1 = s
+        # For transposed: (s - 1) * stride + k = n
+        layer_x = noise
+        height = 1
+        width = 1
+        for i, (kernel, stride, channels) in enumerate(layer_params):
+            height = (height - 1) * stride + kernel
+            width = height
+            layer_x = ops.deconv2d(
+                opts, layer_x, [batch_size, height, width, channels], d_h=stride, d_w=stride,
+                scope='h%d_deconv' % i, conv_filters_dim=kernel, padding='VALID')
+            if opts['batch_norm']:
+                layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
+            layer_x = ops.lrelu(layer_x, 0.1)
+        assert height == data_height
+        assert width == data_width
+
+        # Then two 1x1 convolutions.
+        layer_x = ops.conv2d(opts, layer_x, num_units / 8, d_h=1, d_w=1, scope='conv2d_1x1', conv_filters_dim=1)
+        if opts['batch_norm']:
+            layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bnlast')
+        layer_x = ops.lrelu(layer_x, 0.1)
+        layer_x = ops.conv2d(opts, layer_x, data_channels, d_h=1, d_w=1, scope='conv2d_1x1_2', conv_filters_dim=1)
+
+        if opts['input_normalize_sym']:
+            return tf.nn.tanh(layer_x)
+        else:
+            return tf.nn.sigmoid(layer_x)
+
     def generator(self, opts, noise, is_training=False, reuse=False, keep_prob=1.):
         """ Decoder actually.
 
@@ -297,6 +344,8 @@ class ImagePot(Pot):
                 return self.dcgan_like_arch(opts, noise, is_training, reuse, keep_prob)
             elif opts['g_arch'] == 'conv_up_res':
                 return self.conv_up_res(opts, noise, is_training, reuse, keep_prob)
+            elif opts['g_arch'] == 'ali':
+                return self.ali_deconv(opts, noise, is_training, reuse, keep_prob)
             else:
                 raise ValueError('%s unknown' % opts['g_arch'])
 
@@ -443,34 +492,76 @@ class ImagePot(Pot):
                 h1 = tf.nn.relu(h1)
                 h2 = ops.linear(opts, h1, 512, 'h2_lin')
                 h2 = tf.nn.relu(h2)
-                code = ops.linear(opts, h2, opts['latent_space_dim'], 'h3_lin')
+                return ops.linear(opts, h2, opts['latent_space_dim'], 'h3_lin')
+            elif opts['e_arch'] == 'dcgan':
+                return self.dcgan_encoder(opts, input_, is_training, reuse, keep_prob)
+            elif opts['e_arch'] == 'ali':
+                return self.ali_encoder(opts, input_, is_training, reuse, keep_prob)
             else:
-                num_layers = opts['e_num_layers']
-                layer_x = input_
-                for i in xrange(num_layers):
-                    scale = 2**(num_layers-i-1)
-                    layer_x = ops.conv2d(opts, layer_x, num_units / scale, scope='h%d_conv' % i)
+                raise ValueError('%s Unknown' % opts['e_arch'])
 
-                    if opts['batch_norm']:
-                        layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
+    def dcgan_encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
+        num_units = opts['g_num_filters']
+        num_layers = opts['e_num_layers']
+        layer_x = input_
+        for i in xrange(num_layers):
+            scale = 2**(num_layers-i-1)
+            layer_x = ops.conv2d(opts, layer_x, num_units / scale, scope='h%d_conv' % i)
+
+            if opts['batch_norm']:
+                layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
+            layer_x = tf.nn.relu(layer_x)
+            if opts['dropout']:
+                _keep_prob = tf.minimum(
+                    1., 0.9 - (0.9 - keep_prob) * float(i + 1) / num_layers)
+                layer_x = tf.nn.dropout(layer_x, _keep_prob)
+
+            if opts['e_3x3_conv'] > 0:
+                before = layer_x
+                for j in range(opts['e_3x3_conv']):
+                    layer_x = ops.conv2d(opts, layer_x, num_units / scale, d_h=1, d_w=1,
+                                         scope='conv2d_3x3_%d_%d' % (i, j),
+                                         conv_filters_dim=3)
                     layer_x = tf.nn.relu(layer_x)
-                    if opts['dropout']:
-                        _keep_prob = tf.minimum(
-                            1., 0.9 - (0.9 - keep_prob) * float(i + 1) / num_layers)
-                        layer_x = tf.nn.dropout(layer_x, _keep_prob)
+                layer_x += before  # Residual connection.
 
-                    if opts['e_3x3_conv'] > 0:
-                        before = layer_x
-                        for j in range(opts['e_3x3_conv']):
-                            layer_x = ops.conv2d(opts, layer_x, num_units / scale, d_h=1, d_w=1,
-                                                 scope='conv2d_3x3_%d_%d' % (i, j),
-                                                 conv_filters_dim=3)
-                            layer_x = tf.nn.relu(layer_x)
-                        layer_x += before  # Residual connection.
+        return ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
 
-                code = ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
+    def ali_encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
+        num_units = opts['g_num_filters']
+        layer_params = []
+        layer_params.append([5, 1, num_units / 8])
+        layer_params.append([4, 2, num_units / 4])
+        layer_params.append([4, 1, num_units / 2])
+        layer_params.append([4, 2, num_units])
+        layer_params.append([4, 1, num_units * 2])
+        # For convolution: (n - k) / stride + 1 = s
+        # For transposed: (s - 1) * stride + k = n
+        layer_x = input_
+        height = int(layer_x.get_shape()[1])
+        width = int(layer_x.get_shape()[2])
+        assert height == width
+        for i, (kernel, stride, channels) in enumerate(layer_params):
+            height = (height - kernel) / stride + 1
+            width = height
+            print((height, width))
+            layer_x = ops.conv2d(
+                opts, layer_x, channels, d_h=stride, d_w=stride,
+                scope='h%d_conv' % i, conv_filters_dim=kernel, padding='VALID')
+            if opts['batch_norm']:
+                layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
+            layer_x = ops.lrelu(layer_x, 0.1)
+        assert height == 1
+        assert width == 1
 
-        return code
+        # Then two 1x1 convolutions.
+        layer_x = ops.conv2d(opts, layer_x, num_units * 2, d_h=1, d_w=1, scope='conv2d_1x1', conv_filters_dim=1)
+        if opts['batch_norm']:
+            layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bnlast')
+        layer_x = ops.lrelu(layer_x, 0.1)
+        layer_x = ops.conv2d(opts, layer_x, num_units / 2, d_h=1, d_w=1, scope='conv2d_1x1_2', conv_filters_dim=1)
+
+        return ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
 
     def _data_augmentation(self, opts, real_points, is_training):
         if not opts['data_augm']:
@@ -533,6 +624,9 @@ class ImagePot(Pot):
         adv_c_loss = adv_fake + adv_true
         emb_c = tf.reduce_sum(tf.square(crazy_hack - tf.stop_gradient(encoded_training)), 1)
         emb_c_loss = tf.reduce_mean(tf.sqrt(emb_c + 1e-5))
+        # Normalize the loss, so that it does not depend on how good the
+        # discriminator is.
+        emb_c_loss = emb_c_loss / tf.stop_gradient(emb_c_loss)
         return adv_c_loss, emb_c_loss
 
     def _build_model_internal(self, opts):

@@ -91,6 +91,7 @@ def main():
     opts['g_arch'] = 'dcgan_mod'
     opts['g_stride1_deconv'] = False
     opts['g_3x3_conv'] = 0
+    opts['e_arch'] = 'dcgan'
     opts['e_3x3_conv'] = 0
     opts['conv_filters_dim'] = 5
     # --GAN specific:
