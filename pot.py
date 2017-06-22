@@ -280,7 +280,8 @@ class ImagePot(Pot):
         num_units = opts['g_num_filters']
 
         with tf.variable_scope("GENERATOR", reuse=reuse):
-            if not opts['convolutions']:
+            # if not opts['convolutions']:
+            if opts['g_arch'] == 'mlp':
                 h0 = ops.linear(opts, noise, num_units, 'h0_lin')
                 h0 = tf.nn.relu(h0)
                 h1 = ops.linear(opts, h0, num_units, 'h1_lin')
