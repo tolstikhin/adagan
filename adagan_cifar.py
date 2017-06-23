@@ -105,8 +105,10 @@ def main():
     opts['pot'] = FLAGS.pot
     opts['pot_pz_std'] = 2.
     opts['pot_lambda'] = FLAGS.pot_lambda
+    opts['adv_c_loss'] = 'none'
     opts['adv_c_loss_w'] = 0.0
     opts['emb_c_loss_w'] = 0.0
+    opts['reconstr_w'] = 1.0
     opts['z_test'] = 'gan'
     opts['z_test_corr_w'] = 0.1
     opts['z_test_proj_dim'] = 50

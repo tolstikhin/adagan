@@ -5,6 +5,7 @@
 """This class implements POT training.
 
 """
+import collections
 import logging
 import os
 import tensorflow as tf
@@ -464,7 +465,7 @@ class ImagePot(Pot):
         batch_size = self.get_batch_size(opts, input_)
         dim = int(input_.get_shape()[1])
         transposed = tf.transpose(input_, perm=[1, 0])
-        print(transposed.get_shape())
+        print("transposed shape", transposed.get_shape())
         mean = tf.reshape(tf.reduce_mean(transposed, axis=1), [-1, 1])
         centered_transposed = transposed - mean
         cov = tf.matmul(centered_transposed, tf.transpose(centered_transposed)) / batch_size
@@ -571,7 +572,7 @@ class ImagePot(Pot):
         height = int(real_points.get_shape()[1])
         width = int(real_points.get_shape()[2])
         depth = int(real_points.get_shape()[3])
-        print(real_points.get_shape())
+        print("real_points shape", real_points.get_shape())
         def _distort_func(image):
             # tf.image.per_image_standardization(image), should we?
             # Pad with zeros.
@@ -630,11 +631,53 @@ class ImagePot(Pot):
         emb_c_loss = emb_c_loss / tf.stop_gradient(emb_c_loss)
         return adv_c_loss, emb_c_loss
 
+    def _recon_loss_using_disc_conv(self, opts, reconstructed_training, real_points, is_training, keep_prob):
+        """Build an additional loss using a discriminator in X space."""
+        def _architecture(layer_x, reuse=None):
+            with tf.variable_scope('DISC_X_LOSS', reuse=reuse):
+                num_units = 128
+                num_layers = 2
+                for i in xrange(num_layers):
+                    scale = 2**(num_layers-i-1)
+                    layer_x = ops.conv2d(opts, layer_x, num_units / scale, scope='h%d_conv' % i)
+                    if opts['batch_norm']:
+                        layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
+                    layer_x = tf.nn.relu(layer_x)
+                size = int(layer_x.get_shape()[1])
+                last = ops.conv2d(opts, layer_x, 1, d_h=1, d_w=1, scope="last_lin")
+                return layer_x, tf.reshape(last, [-1, size * size])
+
+
+        reconstructed_embed_sg, adv_fake_layer = _architecture(tf.stop_gradient(reconstructed_training), reuse=None)
+        reconstructed_embed, _ = _architecture(reconstructed_training, reuse=True)
+        # Below line enforces the forward to be reconstructed_embed and backwards to NOT change the discriminator....
+        crazy_hack = reconstructed_embed-reconstructed_embed_sg+tf.stop_gradient(reconstructed_embed_sg)
+        real_p_embed_sg, adv_true_layer = _architecture(tf.stop_gradient(real_points), reuse=True)
+        real_p_embed, _ = _architecture(real_points, reuse=True)
+
+        adv_fake = tf.nn.sigmoid_cross_entropy_with_logits(
+                    logits=adv_fake_layer, labels=tf.zeros_like(adv_fake_layer))
+        adv_true = tf.nn.sigmoid_cross_entropy_with_logits(
+                    logits=adv_true_layer, labels=tf.ones_like(adv_true_layer))
+        adv_fake = tf.reduce_mean(adv_fake)
+        adv_true = tf.reduce_mean(adv_true)
+        adv_c_loss = adv_fake + adv_true
+        # Note: the reduce on axis 1 does not really make sense as those tensors
+        # are of shape [batch_size, height, width, num_filters]. But we keep it
+        # that way to be similar to the L2 reconstruction cost.
+        emb_c = tf.reduce_sum(tf.square(crazy_hack - tf.stop_gradient(real_p_embed)), 1)
+        emb_c_loss = tf.reduce_mean(tf.sqrt(emb_c + 1e-5))
+        # Normalize the loss, so that it does not depend on how good the
+        # discriminator is.
+        emb_c_loss = emb_c_loss / tf.stop_gradient(emb_c_loss)
+        return adv_c_loss, emb_c_loss
+
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to POT implementation.
 
         """
         data_shape = self._data.data_shape
+        additional_losses = collections.OrderedDict()
 
         # Placeholders
         real_points_ph = tf.placeholder(
@@ -689,14 +732,21 @@ class ImagePot(Pot):
             d_logits_Pz = None
             d_logits_Qz = None
         g_mom_stats = self.moments_stats(opts, encoded_training)
-        loss = loss_reconstr + opts['pot_lambda'] * loss_gan
+        loss = opts['reconstr_w'] * loss_reconstr + opts['pot_lambda'] * loss_gan
 
         # Optionally, add a discriminator in the X space, reusing the encoder.
-        if opts['adv_c_loss_w'] > 0.0 or opts['emb_c_loss_w'] > 0.0:
+        if opts['adv_c_loss'] == 'encoder':
             adv_c_loss, emb_c_loss = self._recon_loss_using_disc_encoder(
                 opts, reconstructed_training, encoded_training, real_points, is_training_ph, keep_prob_ph)
-
             loss += opts['adv_c_loss_w'] * adv_c_loss + opts['emb_c_loss_w'] * emb_c_loss
+            additional_losses['adv_c'], additional_losses['emb_c'] = adv_c_loss, emb_c_loss
+        elif opts['adv_c_loss'] == 'conv':
+            adv_c_loss, emb_c_loss = self._recon_loss_using_disc_conv(
+                opts, reconstructed_training, real_points, is_training_ph, keep_prob_ph)
+            loss += opts['adv_c_loss_w'] * adv_c_loss + opts['emb_c_loss_w'] * emb_c_loss
+            additional_losses['adv_c'], additional_losses['emb_c'] = adv_c_loss, emb_c_loss
+        else:
+            assert opts['adv_c_loss'] == 'none'
 
         t_vars = tf.trainable_variables()
         # Updates for discriminator
@@ -726,6 +776,7 @@ class ImagePot(Pot):
         self._loss_reconstruct = loss_reconstr
         self._loss_gan = loss_gan
         self._loss_z_corr = loss_z_corr
+        self._additional_losses = additional_losses
         self._g_mom_stats = g_mom_stats
         self._d_loss = d_loss
         self._generated = generated_images
@@ -823,16 +874,17 @@ class ImagePot(Pot):
                 if opts['verbose'] and counter % 100 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data
-                    [loss_rec_test, rec_test, g_mom_stats, loss_z_corr] = self._session.run(
+                    [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, additional_losses] = self._session.run(
                         [self._loss_reconstruct,
-                         self._reconstruct_x, self._g_mom_stats, self._loss_z_corr],
+                         self._reconstruct_x, self._g_mom_stats, self._loss_z_corr, self._additional_losses],
                         feed_dict={self._real_points_ph: test,
                                    self._is_training_ph: False,
                                    self._keep_prob_ph: 1e5})
                     debug_str = 'Epoch: %d/%d, batch:%d/%d' % (
                         _epoch+1, opts['gan_epoch_num'], _idx+1, batches_num)
-                    debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g]' % (
+                    debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g' % (
                         loss, loss_rec, loss_gan, loss_rec_test)
+                    debug_str += ',' + ','.join(['%s: %.2g' % (k, v) for (k, v) in additional_losses.items()])
                     logging.error(debug_str)
                     if opts['verbose'] >= 2:
                         logging.error(g_mom_stats)
