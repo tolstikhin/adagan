@@ -644,7 +644,9 @@ class ImagePot(Pot):
                         layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
                     layer_x = tf.nn.relu(layer_x)
                 size = int(layer_x.get_shape()[1])
-                last = ops.conv2d(opts, layer_x, 1, d_h=1, d_w=1, scope="last_lin")
+                last = ops.conv2d(
+                    opts, layer_x, 1, d_h=1, d_w=1, scope="last_lin",
+                    conv_filters_dim=opts['adv_c_patches_size'])
                 return layer_x, tf.reshape(last, [-1, size * size])
 
 
@@ -709,7 +711,6 @@ class ImagePot(Pot):
             # c(x,y) = ||x - y||_2^2
             loss_reconstr = tf.reduce_sum(
                 tf.square(real_points - reconstructed_training), axis=1)
-            # sqrt(x + delta) guarantees the direvative 1/(x + delta) is finite
             loss_reconstr = tf.reduce_mean(loss_reconstr)
         elif opts['recon_loss'] == 'l1':
             # c(x,y) = ||x - y||_1

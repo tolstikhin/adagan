@@ -106,6 +106,7 @@ def main():
     opts['pot_pz_std'] = 2.
     opts['pot_lambda'] = FLAGS.pot_lambda
     opts['adv_c_loss'] = 'none'
+    opts['adv_c_patches_size'] = 5
     opts['adv_c_loss_w'] = 0.0
     opts['emb_c_loss_w'] = 0.0
     opts['reconstr_w'] = 1.0
@@ -124,7 +125,7 @@ def main():
     opts['recon_loss'] = 'l2'
     # "manual" or number (float or int) giving the number of epochs to divide
     # the learning rate by 10 (converted into an exp decay per epoch).
-    opts['decay_schedule'] = 60
+    opts['decay_schedule'] = 100
     opts['opt_learning_rate'] = FLAGS.learning_rate
     opts['opt_d_learning_rate'] = FLAGS.d_learning_rate
     opts['opt_g_learning_rate'] = FLAGS.g_learning_rate
