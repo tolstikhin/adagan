@@ -705,6 +705,12 @@ class ImagePot(Pot):
                 tf.square(real_points - reconstructed_training), axis=1)
             # sqrt(x + delta) guarantees the direvative 1/(x + delta) is finite
             loss_reconstr = tf.reduce_mean(tf.sqrt(loss_reconstr + 1e-08))
+        elif opts['recon_loss'] == 'l2sq':
+            # c(x,y) = ||x - y||_2^2
+            loss_reconstr = tf.reduce_sum(
+                tf.square(real_points - reconstructed_training), axis=1)
+            # sqrt(x + delta) guarantees the direvative 1/(x + delta) is finite
+            loss_reconstr = tf.reduce_mean(loss_reconstr)
         elif opts['recon_loss'] == 'l1':
             # c(x,y) = ||x - y||_1
             loss_reconstr = tf.reduce_mean(tf.reduce_sum(
