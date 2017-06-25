@@ -15,6 +15,7 @@ from utils import TQDM
 import numpy as np
 import ops
 from metrics import Metrics
+slim = tf.contrib.slim
 
 class Pot(object):
     """A base class for running individual POTs.
@@ -32,6 +33,9 @@ class Pot(object):
         # Placeholders
         self._real_points_ph = None
         self._noise_ph = None
+        # Init ops
+        self._additional_init_ops = []
+        self._init_feed_dict = {}
 
         # Main operations
 
@@ -45,6 +49,7 @@ class Pot(object):
         # calling global_variables_initializer().
         init = tf.global_variables_initializer()
         self._session.run(init)
+        self._session.run(self._additional_init_ops, self._init_feed_dict)
 
     def __enter__(self):
         return self
@@ -672,6 +677,101 @@ class ImagePot(Pot):
         emb_c_loss = emb_c_loss / tf.stop_gradient(emb_c_loss)
         return adv_c_loss, emb_c_loss
 
+    def _recon_loss_using_vgg(self, opts, reconstructed_training, real_points, is_training, keep_prob):
+        """Build an additional loss using a pretrained VGG in X space."""
+        def vgg_16(inputs,
+                   is_training=False,
+                   dropout_keep_prob=0.5,
+                   scope='vgg_16',
+                   fc_conv_padding='VALID', reuse=None):
+            inputs = inputs * 255.0
+            inputs -= tf.constant([123.68, 116.779, 103.939], dtype=tf.float32)
+            with tf.variable_scope(scope, 'vgg_16', [inputs], reuse=reuse) as sc:
+              end_points_collection = sc.name + '_end_points'
+              end_points = {}
+              # Collect outputs for conv2d, fully_connected and max_pool2d.
+              with slim.arg_scope([slim.conv2d, slim.fully_connected, slim.max_pool2d],
+                                  outputs_collections=end_points_collection):
+                end_points['pool0'] = inputs
+                net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='conv1')
+                net = slim.max_pool2d(net, [2, 2], scope='pool1')
+                end_points['pool1'] = net
+                net = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
+                net = slim.max_pool2d(net, [2, 2], scope='pool2')
+                end_points['pool2'] = net
+                net = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
+                net = slim.max_pool2d(net, [2, 2], scope='pool3')
+                end_points['pool3'] = net
+                net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
+                net = slim.max_pool2d(net, [2, 2], scope='pool4')
+                end_points['pool4'] = net
+                net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
+                net = slim.max_pool2d(net, [2, 2], scope='pool5')
+                end_points['pool5'] = net
+          #       # Use conv2d instead of fully_connected layers.
+          #       net = slim.conv2d(net, 4096, [7, 7], padding=fc_conv_padding, scope='fc6')
+          #       net = slim.dropout(net, dropout_keep_prob, is_training=is_training,
+          #                          scope='dropout6')
+          #       net = slim.conv2d(net, 4096, [1, 1], scope='fc7')
+          #       net = slim.dropout(net, dropout_keep_prob, is_training=is_training,
+          #                          scope='dropout7')
+          #       net = slim.conv2d(net, num_classes, [1, 1],
+          #                         activation_fn=None,
+          #                         normalizer_fn=None,
+          #                         scope='fc8')
+                # Convert end_points_collection into a end_point dict.
+          #       end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+                return net, end_points
+
+        def _architecture(_inputs, reuse=None):
+            _, end_points = vgg_16(_inputs, is_training=is_training, dropout_keep_prob=keep_prob, reuse=reuse)
+            layer_name = opts['vgg_layer']
+            if layer_name == 'concat':
+                outputs = []
+                for ln in ['pool1', 'pool2', 'pool3']:
+                    output = end_points[ln]
+                    output = tf.reshape(output, [-1, np.prod([int(d) for d in output.get_shape()[1:]])])
+                    outputs.append(output)
+                output = tf.concat(outputs, 1)
+            elif layer_name.startswith('concat_w'):
+                weights = layer_name.split(',')[1:]
+                assert len(weights) == 5
+                outputs = []
+                for lnum in range(5):
+                    num = lnum + 1
+                    ln = 'pool%d' % num
+                    output = end_points[ln]
+                    output = tf.reshape(output, [-1, np.prod([int(d) for d in output.get_shape()[1:]])])
+                    # We sqrt the weight here because we use L2 after.
+                    outputs.append(np.sqrt(float(weights[lnum])) * output)
+                output = tf.concat(outputs, 1)
+            else:
+                output = end_points[layer_name]
+                output = tf.reshape(output, [-1, np.prod([int(d) for d in output.get_shape()[1:]])])
+            if reuse is None:
+                variables_to_restore = slim.get_variables_to_restore(include=['vgg_16'])
+                path = os.path.join(opts['data_dir'], 'vgg_16.ckpt')
+#                 '/tmpp/models/vgg_16.ckpt'
+                init_assign_op, init_feed_dict = slim.assign_from_checkpoint(path, variables_to_restore)
+                self._additional_init_ops += [init_assign_op]
+                self._init_feed_dict.update(init_feed_dict)
+            return output
+
+
+        reconstructed_embed_sg = _architecture(tf.stop_gradient(reconstructed_training), reuse=None)
+        reconstructed_embed = _architecture(reconstructed_training, reuse=True)
+        # Below line enforces the forward to be reconstructed_embed and backwards to NOT change the discriminator....
+        crazy_hack = reconstructed_embed-reconstructed_embed_sg+tf.stop_gradient(reconstructed_embed_sg)
+        real_p_embed = _architecture(real_points, reuse=True)
+
+        emb_c = tf.reduce_mean(tf.square(crazy_hack - tf.stop_gradient(real_p_embed)), 1)
+        emb_c_loss = tf.reduce_mean(tf.sqrt(emb_c + 1e-5))
+#         emb_c_loss = tf.Print(emb_c_loss, [emb_c_loss], "emb_c_loss")
+#         # Normalize the loss, so that it does not depend on how good the
+#         # discriminator is.
+#         emb_c_loss = emb_c_loss / tf.stop_gradient(emb_c_loss)
+        return emb_c_loss
+
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to POT implementation.
 
@@ -745,6 +845,11 @@ class ImagePot(Pot):
                 opts, reconstructed_training, real_points, is_training_ph, keep_prob_ph)
             loss += opts['adv_c_loss_w'] * adv_c_loss + opts['emb_c_loss_w'] * emb_c_loss
             additional_losses['adv_c'], additional_losses['emb_c'] = adv_c_loss, emb_c_loss
+        elif opts['adv_c_loss'] == 'vgg':
+            emb_c_loss = self._recon_loss_using_vgg(
+                opts, reconstructed_training, real_points, is_training_ph, keep_prob_ph)
+            loss += opts['emb_c_loss_w'] * emb_c_loss
+            additional_losses['emb_c'] = emb_c_loss
         else:
             assert opts['adv_c_loss'] == 'none'
 
@@ -884,7 +989,7 @@ class ImagePot(Pot):
                         _epoch+1, opts['gan_epoch_num'], _idx+1, batches_num)
                     debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g' % (
                         loss, loss_rec, loss_gan, loss_rec_test)
-                    debug_str += ',' + ','.join(['%s: %.2g' % (k, v) for (k, v) in additional_losses.items()])
+                    debug_str += ',' + ', '.join(['%s=%.2g' % (k, v) for (k, v) in additional_losses.items()])
                     logging.error(debug_str)
                     if opts['verbose'] >= 2:
                         logging.error(g_mom_stats)

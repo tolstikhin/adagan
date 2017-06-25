@@ -106,6 +106,7 @@ def main():
     opts['pot_pz_std'] = 2.
     opts['pot_lambda'] = FLAGS.pot_lambda
     opts['adv_c_loss'] = 'none'
+    opts['vgg_layer'] = 'pool2'
     opts['adv_c_loss_w'] = 0.0
     opts['emb_c_loss_w'] = 0.0
     opts['reconstr_w'] = 1.0
