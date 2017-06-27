@@ -807,15 +807,20 @@ class ImagePot(Pot):
                 tf.square(real_points - reconstructed_training), axis=1)
             # sqrt(x + delta) guarantees the direvative 1/(x + delta) is finite
             loss_reconstr = tf.reduce_mean(tf.sqrt(loss_reconstr + 1e-08))
+        elif opts['recon_loss'] == 'l2f':
+            # c(x,y) = ||x - y||_2
+            loss_reconstr = tf.reduce_sum(
+                tf.square(real_points - reconstructed_training), axis=[1, 2, 3])
+            loss_reconstr = tf.reduce_mean(tf.sqrt(1e-08 + loss_reconstr)) * 0.2
         elif opts['recon_loss'] == 'l2sq':
             # c(x,y) = ||x - y||_2^2
             loss_reconstr = tf.reduce_sum(
-                tf.square(real_points - reconstructed_training), axis=1)
-            loss_reconstr = tf.reduce_mean(loss_reconstr)
+                tf.square(real_points - reconstructed_training), axis=[1, 2, 3])
+            loss_reconstr = tf.reduce_mean(loss_reconstr) * 0.05
         elif opts['recon_loss'] == 'l1':
             # c(x,y) = ||x - y||_1
             loss_reconstr = tf.reduce_mean(tf.reduce_sum(
-                tf.abs(real_points - reconstructed_training), axis=1))
+                tf.abs(real_points - reconstructed_training), axis=[1, 2, 3])) * 0.02
         else:
             assert False
 
