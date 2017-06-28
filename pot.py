@@ -998,7 +998,6 @@ class ImagePot(Pot):
                 data_ids = np.random.choice(train_size, opts['batch_size'],
                                             replace=False, p=self._data_weights)
                 batch_images = self._data.data[data_ids].astype(np.float)
-                # batch_labels = self._data.labels[data_ids].astype(np.int32)
                 batch_noise = opts['pot_pz_std'] * utils.generate_noise(opts, opts['batch_size'])
 
 
@@ -1017,13 +1016,21 @@ class ImagePot(Pot):
 
                 # Update discriminator in Z space (if any).
                 if self._d_optim is not None:
-                    _ = self._session.run(
-                        [self._d_optim, self._d_loss],
-                        feed_dict={self._real_points_ph: batch_images,
-                                   self._noise_ph: batch_noise,
-                                   self._lr_decay_ph: decay,
-                                   self._is_training_ph: True,
-                                   self._keep_prob_ph: opts['dropout_keep_prob']})
+                    for _st in range(opts['d_steps']):
+                        if opts['d_new_minibatch']:
+                            d_data_ids = np.random.choice(
+                                train_size, opts['batch_size'],
+                                replace=False, p=self._data_weights)
+                            d_batch_images = self._data.data[data_ids].astype(np.float)
+                        else:
+                            d_batch_images = batch_images
+                        _ = self._session.run(
+                            [self._d_optim, self._d_loss],
+                            feed_dict={self._real_points_ph: d_batch_images,
+                                       self._noise_ph: batch_noise,
+                                       self._lr_decay_ph: decay,
+                                       self._is_training_ph: True,
+                                       self._keep_prob_ph: opts['dropout_keep_prob']})
                 counter += 1
 
                 rec_test = None

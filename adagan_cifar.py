@@ -119,6 +119,7 @@ def main():
     opts['optimizer'] = 'adam' # sgd, adam
     opts["batch_size"] = 100
     opts["d_steps"] = 1
+    opts['d_new_minibatch'] = False
     opts["g_steps"] = 2
     opts['batch_norm'] = True
     opts['dropout'] = True
