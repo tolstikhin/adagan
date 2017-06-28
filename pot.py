@@ -335,18 +335,19 @@ class ImagePot(Pot):
         with tf.variable_scope("GENERATOR", reuse=reuse):
             # if not opts['convolutions']:
             if opts['g_arch'] == 'mlp':
-                h0 = ops.linear(opts, noise, num_units, 'h0_lin')
-                h0 = tf.nn.relu(h0)
-                h1 = ops.linear(opts, h0, num_units, 'h1_lin')
-                h1 = tf.nn.relu(h1)
-                h2 = ops.linear(opts, h1, num_units, 'h2_lin')
-                h2 = tf.nn.relu(h2)
-                h3 = ops.linear(opts, h2, np.prod(output_shape), 'h3_lin')
-                h3 = tf.reshape(h3, [-1] + list(output_shape))
+                layer_x = noise
+                for i in range(opts['g_num_layers']):
+                    layer_x = ops.linear(opts, layer_x, num_units, 'h%d_lin' % i)
+                    layer_x = tf.nn.relu(layer_x)
+                    if opts['batch_norm']:
+                        layer_x = ops.batch_norm(
+                            opts, layer_x, is_training, reuse, scope='bn%d' % i)
+                out = ops.linear(opts, layer_x, np.prod(output_shape), 'h3_lin')
+                out = tf.reshape(out, [-1] + list(output_shape))
                 if opts['input_normalize_sym']:
-                    return tf.nn.tanh(h3)
+                    return tf.nn.tanh(out)
                 else:
-                    return tf.nn.sigmoid(h3)
+                    return tf.nn.sigmoid(out)
             elif opts['g_arch'] in ['dcgan', 'dcgan_mod']:
                 return self.dcgan_like_arch(opts, noise, is_training, reuse, keep_prob)
             elif opts['g_arch'] == 'conv_up_res':
