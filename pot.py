@@ -774,6 +774,40 @@ class ImagePot(Pot):
 #         emb_c_loss = emb_c_loss / tf.stop_gradient(emb_c_loss)
         return emb_c_loss
 
+    def _recon_loss_using_moments(self, opts, reconstructed_training, real_points, is_training, keep_prob):
+        """Build an additional loss using moments."""
+
+        def _architecture(_inputs):
+            _inputs_sq = tf.square(_inputs)
+            height = int(_inputs.get_shape()[1])
+            width = int(_inputs.get_shape()[2])
+            channels = int(_inputs.get_shape()[3])
+            def ConvFlatten(x, kernel_size):
+#                 w_sum = tf.ones([kernel_size, kernel_size, channels, 1]) / (kernel_size * kernel_size * channels)
+                w_sum = tf.eye(num_rows=channels, num_columns=channels, batch_shape=[kernel_size * kernel_size])
+                w_sum = tf.reshape(w_sum, [kernel_size, kernel_size, channels, channels])
+                w_sum = w_sum / (kernel_size * kernel_size)
+                sum_ = tf.nn.conv2d(x, w_sum, strides=[1, 1, 1, 1], padding='VALID')
+                size = np.prod([int(d) for d in sum_.get_shape()[1:]])
+                assert size == (height - kernel_size + 1) * (width - kernel_size + 1) * channels, size
+                return tf.reshape(sum_, [-1, size])
+            outputs = []
+            for size in [5]:#, 4, 5]:  # TODO: tune
+                mean = ConvFlatten(_inputs, size)
+                square = ConvFlatten(_inputs_sq, size)
+                var = square - tf.square(mean)
+#                 outputs += [mean, tf.sqrt(1e-5 + var)]
+                outputs += [var]
+            return tf.concat(outputs, 1)
+
+        reconstructed_embed = _architecture(reconstructed_training)
+        real_p_embed = _architecture(real_points)
+
+        emb_c = tf.reduce_mean(tf.square(reconstructed_embed - tf.stop_gradient(real_p_embed)), 1)
+#         emb_c = tf.Print(emb_c, [emb_c], "emb_c")
+        emb_c_loss = tf.reduce_mean(emb_c)
+        return emb_c_loss * 100.0 * 100.0 # TODO: constant
+
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to POT implementation.
 
@@ -859,6 +893,11 @@ class ImagePot(Pot):
             additional_losses['adv_c'], additional_losses['emb_c'] = adv_c_loss, emb_c_loss
         elif opts['adv_c_loss'] == 'vgg':
             emb_c_loss = self._recon_loss_using_vgg(
+                opts, reconstructed_training, real_points, is_training_ph, keep_prob_ph)
+            loss += opts['emb_c_loss_w'] * emb_c_loss
+            additional_losses['emb_c'] = emb_c_loss
+        elif opts['adv_c_loss'] == 'moments':
+            emb_c_loss = self._recon_loss_using_moments(
                 opts, reconstructed_training, real_points, is_training_ph, keep_prob_ph)
             loss += opts['emb_c_loss_w'] * emb_c_loss
             additional_losses['emb_c'] = emb_c_loss
