@@ -87,6 +87,7 @@ def main():
     opts['d_num_layers'] = 4
     opts['g_num_filters'] = 1024
     opts['g_num_layers'] = 3
+    opts['e_num_filters'] = 1024
     opts['e_num_layers'] = 3
     opts['g_arch'] = 'dcgan_mod'
     opts['g_stride1_deconv'] = False

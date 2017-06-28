@@ -490,7 +490,7 @@ class ImagePot(Pot):
 
     def encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
 
-        num_units = opts['g_num_filters']
+        num_units = opts['e_num_filters']
         with tf.variable_scope("ENCODER", reuse=reuse):
             if not opts['convolutions']:
                 h0 = ops.linear(opts, input_, 1024, 'h0_lin')
@@ -508,7 +508,7 @@ class ImagePot(Pot):
                 raise ValueError('%s Unknown' % opts['e_arch'])
 
     def dcgan_encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
-        num_units = opts['g_num_filters']
+        num_units = opts['e_num_filters']
         num_layers = opts['e_num_layers']
         layer_x = input_
         for i in xrange(num_layers):
@@ -535,7 +535,7 @@ class ImagePot(Pot):
         return ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
 
     def ali_encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
-        num_units = opts['g_num_filters']
+        num_units = opts['e_num_filters']
         layer_params = []
         layer_params.append([5, 1, num_units / 8])
         layer_params.append([4, 2, num_units / 4])
@@ -909,6 +909,8 @@ class ImagePot(Pot):
         d_vars = [var for var in t_vars if 'DISCRIMINATOR/' in var.name]
         # Updates for encoder and generator
         eg_vars = [var for var in t_vars if 'DISCRIMINATOR/' not in var.name]
+        logging.error('Param num in G and E: %d' % \
+                np.sum([np.prod([int(d) for d in v.get_shape()]) for v in eg_vars]))
 
         if len(d_vars) > 0:
             d_optim = ops.optimizer(opts, net='d', decay=lr_decay_ph).minimize(loss=d_loss, var_list=d_vars)
