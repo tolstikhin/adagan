@@ -793,7 +793,7 @@ class ImagePot(Pot):
                 assert size == (height - kernel_size + 1) * (width - kernel_size + 1) * channels, size
                 return tf.reshape(sum_, [-1, size])
             outputs = []
-            for size in [5]:#, 4, 5]:  # TODO: tune
+            for size in [3, 4, 5]:
                 mean = ConvFlatten(_inputs, size)
                 square = ConvFlatten(_inputs_sq, size)
                 var = square - tf.square(mean)
