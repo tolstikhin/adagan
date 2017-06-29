@@ -8,6 +8,7 @@
 import collections
 import logging
 import os
+import time
 import tensorflow as tf
 import utils
 from utils import ProgressBar
@@ -971,6 +972,7 @@ class ImagePot(Pot):
         l2s = []
         losses = []
 
+        start_time = time.time()
         counter = 0
         decay = 1.
         logging.error('Training POT')
@@ -997,7 +999,6 @@ class ImagePot(Pot):
                                  global_step=counter)
 
             for _idx in xrange(batches_num):
-                # logging.error('Step %d of %d' % (_idx, batches_num ) )
                 data_ids = np.random.choice(train_size, opts['batch_size'],
                                             replace=False, p=self._data_weights)
                 batch_images = self._data.data[data_ids].astype(np.float)
@@ -1035,6 +1036,7 @@ class ImagePot(Pot):
                                        self._is_training_ph: True,
                                        self._keep_prob_ph: opts['dropout_keep_prob']})
                 counter += 1
+                now = time.time()
 
                 rec_test = None
                 if opts['verbose'] and counter % 100 == 0:
@@ -1046,11 +1048,13 @@ class ImagePot(Pot):
                         feed_dict={self._real_points_ph: test,
                                    self._is_training_ph: False,
                                    self._keep_prob_ph: 1e5})
-                    debug_str = 'Epoch: %d/%d, batch:%d/%d' % (
-                        _epoch+1, opts['gan_epoch_num'], _idx+1, batches_num)
+                    debug_str = 'Epoch: %d/%d, batch:%d/%d, batch/sec:%.2f' % (
+                        _epoch+1, opts['gan_epoch_num'], _idx+1,
+                        batches_num, float(counter) / (now - start_time))
                     debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g' % (
                         loss, loss_rec, loss_gan, loss_rec_test)
-                    debug_str += ',' + ', '.join(['%s=%.2g' % (k, v) for (k, v) in additional_losses.items()])
+                    debug_str += ',' + ', '.join(
+                        ['%s=%.2g' % (k, v) for (k, v) in additional_losses.items()])
                     logging.error(debug_str)
                     if opts['verbose'] >= 2:
                         logging.error(g_mom_stats)
