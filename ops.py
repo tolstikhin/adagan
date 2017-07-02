@@ -63,7 +63,7 @@ def linear(opts, input_, output_dim, scope=None, init='normal', reuse=None):
 
     return tf.matmul(input_, matrix) + bias
 
-def conv2d(opts, input_, output_dim, d_h=2, d_w=2, scope=None, conv_filters_dim=None, padding='SAME'):
+def conv2d(opts, input_, output_dim, d_h=2, d_w=2, scope=None, conv_filters_dim=None, padding='SAME', l2_norm=False):
     """Convolutional layer.
 
     Args:
@@ -85,6 +85,8 @@ def conv2d(opts, input_, output_dim, d_h=2, d_w=2, scope=None, conv_filters_dim=
         w = tf.get_variable(
             'filter', [k_h, k_w, shape[-1], output_dim],
             initializer=tf.truncated_normal_initializer(stddev=stddev))
+        if l2_norm:
+            w = tf.nn.l2_normalize(w, 2)
         conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding=padding)
         biases = tf.get_variable(
             'b', [output_dim],
