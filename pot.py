@@ -8,6 +8,7 @@
 import collections
 import logging
 import os
+import time
 import tensorflow as tf
 import utils
 from utils import ProgressBar
@@ -416,18 +417,19 @@ class ImagePot(Pot):
         with tf.variable_scope("GENERATOR", reuse=reuse):
             # if not opts['convolutions']:
             if opts['g_arch'] == 'mlp':
-                h0 = ops.linear(opts, noise, num_units, 'h0_lin')
-                h0 = tf.nn.relu(h0)
-                h1 = ops.linear(opts, h0, num_units, 'h1_lin')
-                h1 = tf.nn.relu(h1)
-                h2 = ops.linear(opts, h1, num_units, 'h2_lin')
-                h2 = tf.nn.relu(h2)
-                h3 = ops.linear(opts, h2, np.prod(output_shape), 'h3_lin')
-                h3 = tf.reshape(h3, [-1] + list(output_shape))
+                layer_x = noise
+                for i in range(opts['g_num_layers']):
+                    layer_x = ops.linear(opts, layer_x, num_units, 'h%d_lin' % i)
+                    layer_x = tf.nn.relu(layer_x)
+                    if opts['batch_norm']:
+                        layer_x = ops.batch_norm(
+                            opts, layer_x, is_training, reuse, scope='bn%d' % i)
+                out = ops.linear(opts, layer_x, np.prod(output_shape), 'h3_lin')
+                out = tf.reshape(out, [-1] + list(output_shape))
                 if opts['input_normalize_sym']:
-                    return tf.nn.tanh(h3)
+                    return tf.nn.tanh(out)
                 else:
-                    return tf.nn.sigmoid(h3)
+                    return tf.nn.sigmoid(out)
             elif opts['g_arch'] in ['dcgan', 'dcgan_mod']:
                 return self.dcgan_like_arch(opts, noise, is_training, reuse, keep_prob)
             elif opts['g_arch'] == 'conv_up_res':
@@ -1102,6 +1104,7 @@ class ImagePot(Pot):
         l2s = []
         losses = []
 
+        start_time = time.time()
         counter = 0
         decay = 1.
         logging.error('Training POT')
@@ -1128,7 +1131,6 @@ class ImagePot(Pot):
                                  global_step=counter)
 
             for _idx in xrange(batches_num):
-                # logging.error('Step %d of %d' % (_idx, batches_num ) )
                 data_ids = np.random.choice(train_size, opts['batch_size'],
                                             replace=False, p=self._data_weights)
                 batch_images = self._data.data[data_ids].astype(np.float)
@@ -1166,6 +1168,7 @@ class ImagePot(Pot):
                                        self._is_training_ph: True,
                                        self._keep_prob_ph: opts['dropout_keep_prob']})
                 counter += 1
+                now = time.time()
 
                 rec_test = None
                 if opts['verbose'] and counter % 100 == 0:
@@ -1177,11 +1180,13 @@ class ImagePot(Pot):
                         feed_dict={self._real_points_ph: test,
                                    self._is_training_ph: False,
                                    self._keep_prob_ph: 1e5})
-                    debug_str = 'Epoch: %d/%d, batch:%d/%d' % (
-                        _epoch+1, opts['gan_epoch_num'], _idx+1, batches_num)
+                    debug_str = 'Epoch: %d/%d, batch:%d/%d, batch/sec:%.2f' % (
+                        _epoch+1, opts['gan_epoch_num'], _idx+1,
+                        batches_num, float(counter) / (now - start_time))
                     debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g' % (
                         loss, loss_rec, loss_gan, loss_rec_test)
-                    debug_str += ',' + ', '.join(['%s=%.2g' % (k, v) for (k, v) in additional_losses.items()])
+                    debug_str += ',' + ', '.join(
+                        ['%s=%.2g' % (k, v) for (k, v) in additional_losses.items()])
                     logging.error(debug_str)
                     if opts['verbose'] >= 2:
                         logging.error(g_mom_stats)
