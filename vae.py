@@ -267,11 +267,10 @@ class ImageVae(Vae):
         latent_x_mean, log_latent_sigmas = self.discriminator(
             opts, real_points_ph, is_training_ph)
         scaled_noise = tf.multiply(tf.sqrt(tf.exp(log_latent_sigmas)), noise_ph)
-        #scaled_noise = tf.Print(scaled_noise, [scaled_noise], 'Scaled noise:')
         reconstruct_x = self.generator(opts, latent_x_mean + scaled_noise,
                                        is_training_ph)
-        dec_enc_x = self.generator(opts, latent_x_mean, False, reuse=True)
-        #latent_x_mean = tf.Print(latent_x_mean, [latent_x_mean], 'Q(X)')
+        dec_enc_x = self.generator(opts, latent_x_mean,
+                                   is_training=False, reuse=True)
         loss_kl = 0.5 * tf.reduce_sum(
             tf.exp(log_latent_sigmas) +
             tf.square(latent_x_mean) -

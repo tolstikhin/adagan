@@ -501,7 +501,14 @@ class ImagePot(Pot):
                 h1 = tf.nn.relu(h1)
                 h2 = ops.linear(opts, h1, 512, 'h2_lin')
                 h2 = tf.nn.relu(h2)
-                return ops.linear(opts, h2, opts['latent_space_dim'], 'h3_lin')
+                if opts['e_is_random']:
+                    latent_mean = ops.linear(
+                        opts, h2, opts['latent_space_dim'], 'h3_lin')
+                    log_latent_sigmas = ops.linear(
+                        opts, h2, opts['latent_space_dim'], 'h3_lin_sigma')
+                    return latent_mean, log_latent_sigmas
+                else:
+                    return ops.linear(opts, h2, opts['latent_space_dim'], 'h3_lin')
             elif opts['e_arch'] == 'dcgan':
                 return self.dcgan_encoder(opts, input_, is_training, reuse, keep_prob)
             elif opts['e_arch'] == 'ali':
@@ -534,7 +541,14 @@ class ImagePot(Pot):
                     layer_x = tf.nn.relu(layer_x)
                 layer_x += before  # Residual connection.
 
-        return ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
+        if opts['e_is_random']:
+            latent_mean = ops.linear(
+                opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
+            log_latent_sigmas = ops.linear(
+                opts, layer_x, opts['latent_space_dim'], scope='hlast_lin_sigma')
+            return latent_mean, log_latent_sigmas
+        else:
+            return ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
 
     def ali_encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
         num_units = opts['e_num_filters']
@@ -570,7 +584,14 @@ class ImagePot(Pot):
         layer_x = ops.lrelu(layer_x, 0.1)
         layer_x = ops.conv2d(opts, layer_x, num_units / 2, d_h=1, d_w=1, scope='conv2d_1x1_2', conv_filters_dim=1)
 
-        return ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
+        if opts['e_is_random']:
+            latent_mean = ops.linear(
+                opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
+            log_latent_sigmas = ops.linear(
+                opts, layer_x, opts['latent_space_dim'], scope='hlast_lin_sigma')
+            return latent_mean, log_latent_sigmas
+        else:
+            return ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
 
     def _data_augmentation(self, opts, real_points, is_training):
         if not opts['data_augm']:
@@ -610,17 +631,28 @@ class ImagePot(Pot):
 
         return distorted_images
 
-    def _recon_loss_using_disc_encoder(self, opts, reconstructed_training, encoded_training, real_points, is_training_ph, keep_prob_ph):
+    def _recon_loss_using_disc_encoder(
+            self, opts, reconstructed_training, encoded_training,
+            real_points, is_training_ph, keep_prob_ph):
         """Build an additional loss using the encoder as discriminator."""
         reconstructed_reencoded_sg = self.encoder(
-            opts, tf.stop_gradient(reconstructed_training), is_training=is_training_ph, keep_prob=keep_prob_ph, reuse=True)
+            opts, tf.stop_gradient(reconstructed_training),
+            is_training=is_training_ph, keep_prob=keep_prob_ph, reuse=True)
+        if opts['e_is_random']:
+            reconstructed_reencoded_sg = reconstructed_reencoded_sg[0]
         reconstructed_reencoded = self.encoder(
-            opts, reconstructed_training, is_training=is_training_ph, keep_prob=keep_prob_ph, reuse=True)
+            opts, reconstructed_training, is_training=is_training_ph,
+            keep_prob=keep_prob_ph, reuse=True)
+        if opts['e_is_random']:
+            reconstructed_reencoded = reconstructed_reencoded[0]
         # Below line enforces the forward to be reconstructed_reencoded and backwards to NOT change the encoder....
-        crazy_hack = reconstructed_reencoded-reconstructed_reencoded_sg+tf.stop_gradient(reconstructed_reencoded_sg)
+        crazy_hack = reconstructed_reencoded - reconstructed_reencoded_sg +\
+            tf.stop_gradient(reconstructed_reencoded_sg)
         encoded_training_sg = self.encoder(
             opts, tf.stop_gradient(real_points),
             is_training=is_training_ph, keep_prob=keep_prob_ph, reuse=True)
+        if opts['e_is_random']:
+            encoded_training_sg = encoded_training_sg[0]
 
         adv_fake_layer = ops.linear(opts, reconstructed_reencoded_sg, 1, scope='adv_layer')
         adv_true_layer = ops.linear(opts, encoded_training_sg, 1, scope='adv_layer', reuse=True)
@@ -827,11 +859,20 @@ class ImagePot(Pot):
         keep_prob_ph = tf.placeholder(tf.float32, name='keep_prob_ph')
 
         # Operations
-        real_points = self._data_augmentation(opts, real_points_ph, is_training_ph)
+        real_points = self._data_augmentation(
+            opts, real_points_ph, is_training_ph)
 
-        encoded_training = self.encoder(
-            opts, real_points,
-            is_training=is_training_ph, keep_prob=keep_prob_ph)
+        if opts['e_is_random']:
+            enc_train_mean, enc_log_sigmas = self.encoder(
+                opts, real_points,
+                is_training=is_training_ph, keep_prob=keep_prob_ph)
+            scaled_noise = tf.multiply(
+                tf.sqrt(tf.exp(enc_log_sigmas)), noise_ph)
+            encoded_training = enc_train_mean + scaled_noise
+        else:
+            encoded_training = self.encoder(
+                opts, real_points,
+                is_training=is_training_ph, keep_prob=keep_prob_ph)
         reconstructed_training = self.generator(
             opts, encoded_training,
             is_training=is_training_ph, keep_prob=keep_prob_ph)
@@ -871,7 +912,6 @@ class ImagePot(Pot):
                 tf.nn.sigmoid_cross_entropy_with_logits(
                     logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
             d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
-
             loss_gan = -d_loss_Qz
         else:
             d_loss = None

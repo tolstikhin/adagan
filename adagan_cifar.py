@@ -87,6 +87,7 @@ def main():
     opts['d_num_layers'] = 4
     opts['g_num_filters'] = 1024
     opts['g_num_layers'] = 3
+    opts['e_is_random'] = False
     opts['e_num_filters'] = 1024
     opts['e_num_layers'] = 3
     opts['g_arch'] = 'dcgan_mod'
@@ -136,6 +137,9 @@ def main():
     opts['batch_norm_eps'] = 1e-05
     opts['batch_norm_decay'] = 0.9
 
+    if opts['e_is_random']:
+        assert opts['latent_space_distr'] == 'normal',\
+            'Random encoders currently work only with Gaussian Pz'
     # Data augmentation
     opts['data_augm'] = False
 
