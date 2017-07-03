@@ -552,7 +552,7 @@ class ImagePot(Pot):
         batch_size = self.get_batch_size(opts, input_)
         dim = int(input_.get_shape()[1])
         transposed = tf.transpose(input_, perm=[1, 0])
-        print("transposed shape", transposed.get_shape())
+        # print("transposed shape", transposed.get_shape())
         mean = tf.reshape(tf.reduce_mean(transposed, axis=1), [-1, 1])
         centered_transposed = transposed - mean
         cov = tf.matmul(centered_transposed, tf.transpose(centered_transposed)) / batch_size
@@ -647,7 +647,7 @@ class ImagePot(Pot):
         for i, (kernel, stride, channels) in enumerate(layer_params):
             height = (height - kernel) / stride + 1
             width = height
-            print((height, width))
+            # print((height, width))
             layer_x = ops.conv2d(
                 opts, layer_x, channels, d_h=stride, d_w=stride,
                 scope='h%d_conv' % i, conv_filters_dim=kernel, padding='VALID')
@@ -680,7 +680,7 @@ class ImagePot(Pot):
         height = int(real_points.get_shape()[1])
         width = int(real_points.get_shape()[2])
         depth = int(real_points.get_shape()[3])
-        print("real_points shape", real_points.get_shape())
+        # logging.error("real_points shape", real_points.get_shape())
         def _distort_func(image):
             # tf.image.per_image_standardization(image), should we?
             # Pad with zeros.
@@ -1010,6 +1010,8 @@ class ImagePot(Pot):
             tf.float32, [None] + list(data_shape), name='real_points_ph')
         noise_ph = tf.placeholder(
             tf.float32, [None] + [opts['latent_space_dim']], name='noise_ph')
+        enc_noise_ph = tf.placeholder(
+            tf.float32, [None] + [opts['latent_space_dim']], name='enc_noise_ph')
         lr_decay_ph = tf.placeholder(tf.float32)
         is_training_ph = tf.placeholder(tf.bool, name='is_training_ph')
         keep_prob_ph = tf.placeholder(tf.float32, name='keep_prob_ph')
@@ -1026,7 +1028,7 @@ class ImagePot(Pot):
                 opts, real_points,
                 is_training=is_training_ph, keep_prob=keep_prob_ph)
             scaled_noise = tf.multiply(
-                tf.sqrt(tf.exp(enc_log_sigmas)), noise_ph)
+                tf.sqrt(tf.exp(enc_log_sigmas)), enc_noise_ph)
             encoded_training = enc_train_mean + scaled_noise
         else:
             encoded_training = self.encoder(
@@ -1137,6 +1139,7 @@ class ImagePot(Pot):
         self._real_points_ph = real_points_ph
         self._real_points = real_points
         self._noise_ph = noise_ph
+        self._enc_noise_ph = enc_noise_ph
         self._lr_decay_ph = lr_decay_ph
         self._is_training_ph = is_training_ph
         self._keep_prob_ph = keep_prob_ph
@@ -1212,8 +1215,11 @@ class ImagePot(Pot):
                 data_ids = np.random.choice(train_size, opts['batch_size'],
                                             replace=False, p=self._data_weights)
                 batch_images = self._data.data[data_ids].astype(np.float)
-                batch_noise = opts['pot_pz_std'] * utils.generate_noise(opts, opts['batch_size'])
-
+                # Noise for the Pz=Qz GAN
+                batch_noise = opts['pot_pz_std'] *\
+                    utils.generate_noise(opts, opts['batch_size'])
+                # Noise for the random encoder (if present)
+                batch_enc_noise = utils.generate_noise(opts, opts['batch_size'])
 
                 # Update generator (decoder) and encoder
                 [_, loss, loss_rec, loss_gan] = self._session.run(
@@ -1223,6 +1229,7 @@ class ImagePot(Pot):
                      self._loss_gan],
                     feed_dict={self._real_points_ph: batch_images,
                                self._noise_ph: batch_noise,
+                               self._enc_noise_ph: batch_enc_noise,
                                self._lr_decay_ph: decay,
                                self._is_training_ph: True,
                                self._keep_prob_ph: opts['dropout_keep_prob']})
@@ -1236,12 +1243,15 @@ class ImagePot(Pot):
                                 train_size, opts['batch_size'],
                                 replace=False, p=self._data_weights)
                             d_batch_images = self._data.data[data_ids].astype(np.float)
+                            d_batch_enc_noise = utils.generate_noise(opts, opts['batch_size'])
                         else:
                             d_batch_images = batch_images
+                            d_batch_enc_noise = batch_enc_noise
                         _ = self._session.run(
                             [self._d_optim, self._d_loss],
                             feed_dict={self._real_points_ph: d_batch_images,
                                        self._noise_ph: batch_noise,
+                                       self._enc_noise_ph: d_batch_enc_noise,
                                        self._lr_decay_ph: decay,
                                        self._is_training_ph: True,
                                        self._keep_prob_ph: opts['dropout_keep_prob']})
@@ -1253,9 +1263,9 @@ class ImagePot(Pot):
                     # Printing (training and test) loss values
                     test = self._data.test_data
                     [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, additional_losses] = self._session.run(
-                        [self._loss_reconstruct,
-                         self._reconstruct_x, self._g_mom_stats, self._loss_z_corr, self._additional_losses],
+                        [self._loss_reconstruct, self._reconstruct_x, self._g_mom_stats, self._loss_z_corr, self._additional_losses],
                         feed_dict={self._real_points_ph: test,
+                                   self._enc_noise_ph: utils.generate_noise(opts, len(test)),
                                    self._is_training_ph: False,
                                    self._keep_prob_ph: 1e5})
                     debug_str = 'Epoch: %d/%d, batch:%d/%d, batch/sec:%.2f' % (
@@ -1297,13 +1307,15 @@ class ImagePot(Pot):
                             self._noise_ph: self._noise_for_plots[0:num_plot],
                             self._is_training_ph: False,
                             self._keep_prob_ph: 1e5})
+                    Qz_num = 1000
                     metrics.Qz = self._session.run(
                         self._Qz,
                         feed_dict={
-                            self._real_points_ph: self._data.data[:1000],
+                            self._real_points_ph: self._data.data[:Qz_num],
+                            self._enc_noise_ph: utils.generate_noise(opts, Qz_num),
                             self._is_training_ph: False,
                             self._keep_prob_ph: 1e5})
-                    metrics.Qz_labels = self._data.labels[:1000]
+                    metrics.Qz_labels = self._data.labels[:Qz_num]
                     metrics.Pz = batch_noise
                     # l2s.append(np.sum((points_to_plot - sample_prev)**2))
                     # metrics.l2s = l2s[:]
@@ -1319,10 +1331,12 @@ class ImagePot(Pot):
                         prefix='sample_e%04d_mb%05d_' % (_epoch, _idx))
 
                     # --Reconstructions for the train and test points
+                    num_real_p = 8 * 10
                     reconstructed, real_p = self._session.run(
                         [self._reconstruct_x, self._real_points],
                         feed_dict={
-                            self._real_points_ph: self._data.data[:8 * 10],
+                            self._real_points_ph: self._data.data[:num_real_p],
+                            self._enc_noise_ph: utils.generate_noise(opts, num_real_p),
                             self._is_training_ph: True,
                             self._keep_prob_ph: 1e5})
                     points = real_p
