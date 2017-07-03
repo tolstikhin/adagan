@@ -98,7 +98,6 @@ def prod_dim(tensor):
 def flatten(tensor):
     return tf.reshape(tensor, [-1, prod_dim(tensor)])
 
-
 class Pot(object):
     """A base class for running individual POTs.
 
@@ -1020,6 +1019,9 @@ class ImagePot(Pot):
             opts, real_points_ph, is_training_ph)
 
         if opts['e_is_random']:
+            # If encoder is random we map the training points
+            # to the expectation of Q(Z|X) and then add the scaled
+            # Gaussian noise corresponding to the learned sigmas
             enc_train_mean, enc_log_sigmas = self.encoder(
                 opts, real_points,
                 is_training=is_training_ph, keep_prob=keep_prob_ph)
@@ -1079,7 +1081,8 @@ class ImagePot(Pot):
         g_mom_stats = self.moments_stats(opts, encoded_training)
         loss = opts['reconstr_w'] * loss_reconstr + opts['pot_lambda'] * loss_gan
 
-        # Optionally, add a discriminator in the X space, reusing the encoder or a new model.
+        # Optionally, add one more cost function based on the embeddings
+        # add a discriminator in the X space, reusing the encoder or a new model.
         if opts['adv_c_loss'] == 'encoder':
             adv_c_loss, emb_c_loss = self._recon_loss_using_disc_encoder(
                 opts, reconstructed_training, encoded_training, real_points, is_training_ph, keep_prob_ph)
