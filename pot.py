@@ -721,6 +721,29 @@ class ImagePot(Pot):
 
     def _recon_loss_using_disc_conv(self, opts, reconstructed_training, real_points, is_training, keep_prob):
         """Build an additional loss using a discriminator in X space."""
+        def _conv_flatten(x, kernel_size):
+            height = int(x.get_shape()[1])
+            width = int(x.get_shape()[2])
+            channels = int(x.get_shape()[3])
+            w_sum = tf.eye(num_rows=channels, num_columns=channels, batch_shape=[kernel_size * kernel_size])
+            w_sum = tf.reshape(w_sum, [kernel_size, kernel_size, channels, channels])
+            w_sum = w_sum / (kernel_size * kernel_size)
+            sum_ = tf.nn.conv2d(x, w_sum, strides=[1, 1, 1, 1], padding='SAME')
+            size = prod_dim(sum_)
+            assert size == height * width * channels, size
+            return tf.reshape(sum_, [-1, size])
+
+        def _gram_scores(tensor, kernel_size):
+            assert len(tensor.get_shape()) == 4, tensor
+            ttensor = tf.transpose(tensor, [3, 1, 2, 0])
+            rand_indices = tf.random_shuffle(tf.range(ttensor.get_shape()[0]))
+            shuffled = tf.gather(ttensor, rand_indices)
+
+            shuffled = tf.transpose(shuffled, [3, 1, 2, 0])
+            cross_p = _conv_flatten(tensor * shuffled, kernel_size)  # shape [batch_size, height * width * channels]
+            diag_p = _conv_flatten(tf.square(tensor), kernel_size)  # shape [batch_size, height * width * channels]
+            return cross_p, diag_p
+
         def _architecture(inputs, reuse=None):
             with tf.variable_scope('DISC_X_LOSS', reuse=reuse):
                 num_units = opts['adv_c_num_units']
@@ -743,13 +766,25 @@ class ImagePot(Pot):
                         layer_x = ops.lrelu(layer_x, 0.1)
                     last = ops.conv2d(
                         opts, layer_x, 1, d_h=1, d_w=1, scope="last_lin%d" % filter_size, conv_filters_dim=1, l2_norm=True)
+                    if opts['cross_p_w'] > 0.0 or opts['diag_p_w'] > 0.0:
+                        cross_p, diag_p = _gram_scores(layer_x, filter_size)
+                        embedded_outputs.append(cross_p * opts['cross_p_w'])
+                        embedded_outputs.append(diag_p * opts['diag_p_w'])
+                    fl = flatten(layer_x)
+#                     fl = tf.Print(fl, [fl], "fl")
+                    embedded_outputs.append(fl)
                     size = int(last.get_shape()[1])
-                    embedded_outputs.append(flatten(layer_x))
                     linear_outputs.append(tf.reshape(last, [-1, size * size]))
                 if len(embedded_outputs) > 1:
-                    return tf.concat(embedded_outputs, 1), tf.concat(linear_outputs, 1)
+                    embedded_outputs = tf.concat(embedded_outputs, 1)
                 else:
-                    return embedded_outputs[0], linear_outputs[0]
+                    embedded_outputs = embedded_outputs[0]
+                if len(linear_outputs) > 1:
+                    linear_outputs = tf.concat(linear_outputs, 1)
+                else:
+                    linear_outputs = linear_outputs[0]
+
+                return embedded_outputs, linear_outputs
 
 
         reconstructed_embed_sg, adv_fake_layer = _architecture(tf.stop_gradient(reconstructed_training), reuse=None)
@@ -1004,7 +1039,7 @@ class ImagePot(Pot):
         g_mom_stats = self.moments_stats(opts, encoded_training)
         loss = opts['reconstr_w'] * loss_reconstr + opts['pot_lambda'] * loss_gan
 
-        # Optionally, add a discriminator in the X space, reusing the encoder.
+        # Optionally, add a discriminator in the X space, reusing the encoder or a new model.
         if opts['adv_c_loss'] == 'encoder':
             adv_c_loss, emb_c_loss = self._recon_loss_using_disc_encoder(
                 opts, reconstructed_training, encoded_training, real_points, is_training_ph, keep_prob_ph)
