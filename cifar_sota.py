@@ -26,7 +26,7 @@ flags.DEFINE_float("d_learning_rate", 0.0001,
 flags.DEFINE_float("learning_rate", 0.003,
                    "Learning rate for other optimizers [8e-4]")
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
-flags.DEFINE_integer("zdim", 2, "Dimensionality of the latent space [100]")
+flags.DEFINE_integer("zdim", 100, "Dimensionality of the latent space [100]")
 flags.DEFINE_float("init_std", 0.0099999, "Initial variance for weights [0.02]")
 flags.DEFINE_string("workdir", 'results_cifar10_pot_conv', "Working directory ['results']")
 flags.DEFINE_bool("unrolled", False, "Use unrolled GAN training [True]")
