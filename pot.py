@@ -18,6 +18,87 @@ import ops
 from metrics import Metrics
 slim = tf.contrib.slim
 
+
+def vgg_16(inputs,
+           is_training=False,
+           dropout_keep_prob=0.5,
+           scope='vgg_16',
+           fc_conv_padding='VALID', reuse=None):
+    inputs = inputs * 255.0
+    inputs -= tf.constant([123.68, 116.779, 103.939], dtype=tf.float32)
+    with tf.variable_scope(scope, 'vgg_16', [inputs], reuse=reuse) as sc:
+      end_points_collection = sc.name + '_end_points'
+      end_points = {}
+      # Collect outputs for conv2d, fully_connected and max_pool2d.
+      with slim.arg_scope([slim.conv2d, slim.fully_connected, slim.max_pool2d],
+                          outputs_collections=end_points_collection):
+        end_points['pool0'] = inputs
+        net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='conv1')
+        net = slim.max_pool2d(net, [2, 2], scope='pool1')
+        end_points['pool1'] = net
+        net = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
+        net = slim.max_pool2d(net, [2, 2], scope='pool2')
+        end_points['pool2'] = net
+        net = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
+        net = slim.max_pool2d(net, [2, 2], scope='pool3')
+        end_points['pool3'] = net
+        net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
+        net = slim.max_pool2d(net, [2, 2], scope='pool4')
+        end_points['pool4'] = net
+        net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
+        net = slim.max_pool2d(net, [2, 2], scope='pool5')
+        end_points['pool5'] = net
+  #       # Use conv2d instead of fully_connected layers.
+  #       net = slim.conv2d(net, 4096, [7, 7], padding=fc_conv_padding, scope='fc6')
+  #       net = slim.dropout(net, dropout_keep_prob, is_training=is_training,
+  #                          scope='dropout6')
+  #       net = slim.conv2d(net, 4096, [1, 1], scope='fc7')
+  #       net = slim.dropout(net, dropout_keep_prob, is_training=is_training,
+  #                          scope='dropout7')
+  #       net = slim.conv2d(net, num_classes, [1, 1],
+  #                         activation_fn=None,
+  #                         normalizer_fn=None,
+  #                         scope='fc8')
+        # Convert end_points_collection into a end_point dict.
+  #       end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+        return net, end_points
+
+def compute_moments(_inputs, moments=[2, 3]):
+    """From an image input, compute moments"""
+    _inputs_sq = tf.square(_inputs)
+    _inputs_cube = tf.pow(_inputs, 3)
+    height = int(_inputs.get_shape()[1])
+    width = int(_inputs.get_shape()[2])
+    channels = int(_inputs.get_shape()[3])
+    def ConvFlatten(x, kernel_size):
+#                 w_sum = tf.ones([kernel_size, kernel_size, channels, 1]) / (kernel_size * kernel_size * channels)
+        w_sum = tf.eye(num_rows=channels, num_columns=channels, batch_shape=[kernel_size * kernel_size])
+        w_sum = tf.reshape(w_sum, [kernel_size, kernel_size, channels, channels])
+        w_sum = w_sum / (kernel_size * kernel_size)
+        sum_ = tf.nn.conv2d(x, w_sum, strides=[1, 1, 1, 1], padding='VALID')
+        size = prod_dim(sum_)
+        assert size == (height - kernel_size + 1) * (width - kernel_size + 1) * channels, size
+        return tf.reshape(sum_, [-1, size])
+    outputs = []
+    for size in [3, 4, 5]:
+        mean = ConvFlatten(_inputs, size)
+        square = ConvFlatten(_inputs_sq, size)
+        var = square - tf.square(mean)
+        if 2 in moments:
+            outputs.append(var)
+        if 3 in moments:
+            cube = ConvFlatten(_inputs_cube, size)
+            skewness = cube - 3.0 * mean * var - tf.pow(mean, 3)  # Unnormalized
+            outputs.append(skewness)
+    return tf.concat(outputs, 1)
+
+def prod_dim(tensor):
+    return np.prod([int(d) for d in tensor.get_shape()[1:]])
+
+def flatten(tensor):
+    return tf.reshape(tensor, [-1, prod_dim(tensor)])
+
+
 class Pot(object):
     """A base class for running individual POTs.
 
@@ -672,21 +753,70 @@ class ImagePot(Pot):
 
     def _recon_loss_using_disc_conv(self, opts, reconstructed_training, real_points, is_training, keep_prob):
         """Build an additional loss using a discriminator in X space."""
-        def _architecture(layer_x, reuse=None):
+        def _conv_flatten(x, kernel_size):
+            height = int(x.get_shape()[1])
+            width = int(x.get_shape()[2])
+            channels = int(x.get_shape()[3])
+            w_sum = tf.eye(num_rows=channels, num_columns=channels, batch_shape=[kernel_size * kernel_size])
+            w_sum = tf.reshape(w_sum, [kernel_size, kernel_size, channels, channels])
+            w_sum = w_sum / (kernel_size * kernel_size)
+            sum_ = tf.nn.conv2d(x, w_sum, strides=[1, 1, 1, 1], padding='SAME')
+            size = prod_dim(sum_)
+            assert size == height * width * channels, size
+            return tf.reshape(sum_, [-1, size])
+
+        def _gram_scores(tensor, kernel_size):
+            assert len(tensor.get_shape()) == 4, tensor
+            ttensor = tf.transpose(tensor, [3, 1, 2, 0])
+            rand_indices = tf.random_shuffle(tf.range(ttensor.get_shape()[0]))
+            shuffled = tf.gather(ttensor, rand_indices)
+
+            shuffled = tf.transpose(shuffled, [3, 1, 2, 0])
+            cross_p = _conv_flatten(tensor * shuffled, kernel_size)  # shape [batch_size, height * width * channels]
+            diag_p = _conv_flatten(tf.square(tensor), kernel_size)  # shape [batch_size, height * width * channels]
+            return cross_p, diag_p
+
+        def _architecture(inputs, reuse=None):
             with tf.variable_scope('DISC_X_LOSS', reuse=reuse):
-                num_units = 128
-                num_layers = 2
-                for i in xrange(num_layers):
-                    scale = 2**(num_layers-i-1)
-                    layer_x = ops.conv2d(opts, layer_x, num_units / scale, scope='h%d_conv' % i)
-                    if opts['batch_norm']:
-                        layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
-                    layer_x = tf.nn.relu(layer_x)
-                size = int(layer_x.get_shape()[1])
-                last = ops.conv2d(
-                    opts, layer_x, 1, d_h=1, d_w=1, scope="last_lin",
-                    conv_filters_dim=opts['adv_c_patches_size'])
-                return layer_x, tf.reshape(last, [-1, size * size])
+                num_units = opts['adv_c_num_units']
+                num_layers = 1
+                filter_sizes = opts['adv_c_patches_size']
+                if isinstance(filter_sizes, int):
+                    filter_sizes = [filter_sizes]
+                else:
+                    filter_sizes = [int(n) for n in filter_sizes.split(',')]
+                embedded_outputs = []
+                linear_outputs = []
+                for filter_size in filter_sizes:
+                    layer_x = inputs
+                    for i in xrange(num_layers):
+    #                     scale = 2**(num_layers-i-1)
+                        layer_x = ops.conv2d(opts, layer_x, num_units, d_h=1, d_w=1, scope='h%d_conv%d' % (i, filter_size),
+                                             conv_filters_dim=filter_size, padding='SAME')
+    #                     if opts['batch_norm']:
+    #                         layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d_%d' % (i, filter_size))
+                        layer_x = ops.lrelu(layer_x, 0.1)
+                    last = ops.conv2d(
+                        opts, layer_x, 1, d_h=1, d_w=1, scope="last_lin%d" % filter_size, conv_filters_dim=1, l2_norm=True)
+                    if opts['cross_p_w'] > 0.0 or opts['diag_p_w'] > 0.0:
+                        cross_p, diag_p = _gram_scores(layer_x, filter_size)
+                        embedded_outputs.append(cross_p * opts['cross_p_w'])
+                        embedded_outputs.append(diag_p * opts['diag_p_w'])
+                    fl = flatten(layer_x)
+#                     fl = tf.Print(fl, [fl], "fl")
+                    embedded_outputs.append(fl)
+                    size = int(last.get_shape()[1])
+                    linear_outputs.append(tf.reshape(last, [-1, size * size]))
+                if len(embedded_outputs) > 1:
+                    embedded_outputs = tf.concat(embedded_outputs, 1)
+                else:
+                    embedded_outputs = embedded_outputs[0]
+                if len(linear_outputs) > 1:
+                    linear_outputs = tf.concat(linear_outputs, 1)
+                else:
+                    linear_outputs = linear_outputs[0]
+
+                return embedded_outputs, linear_outputs
 
 
         reconstructed_embed_sg, adv_fake_layer = _architecture(tf.stop_gradient(reconstructed_training), reuse=None)
@@ -702,62 +832,75 @@ class ImagePot(Pot):
                     logits=adv_true_layer, labels=tf.ones_like(adv_true_layer))
         adv_fake = tf.reduce_mean(adv_fake)
         adv_true = tf.reduce_mean(adv_true)
+
         adv_c_loss = adv_fake + adv_true
-        # Note: the reduce on axis 1 does not really make sense as those tensors
-        # are of shape [batch_size, height, width, num_filters]. But we keep it
-        # that way to be similar to the L2 reconstruction cost.
+        emb_c = tf.reduce_mean(tf.square(crazy_hack - tf.stop_gradient(real_p_embed)), 1)
+
+        real_points_shuffle = tf.stop_gradient(tf.random_shuffle(real_p_embed))
+        emb_c_shuffle = tf.reduce_mean(tf.square(real_points_shuffle - tf.stop_gradient(reconstructed_embed)), 1)
+
+        raw_emb_c_loss = tf.reduce_mean(emb_c)
+        shuffled_emb_c_loss = tf.reduce_mean(emb_c_shuffle)
+        emb_c_loss = raw_emb_c_loss / shuffled_emb_c_loss
+        emb_c_loss = emb_c_loss * 40
+
+        return adv_c_loss, emb_c_loss
+
+    def _recon_loss_using_disc_conv_eb(self, opts, reconstructed_training, real_points, is_training, keep_prob):
+        """Build an additional loss using a discriminator in X space, using Energy Based approach."""
+        def copy3D(height, width, channels):
+            m = np.zeros([height, width, channels, height, width, channels])
+            for i in xrange(height):
+                for j in xrange(width):
+                    for c in xrange(channels):
+                        m[i, j, c, i, j, c] = 1.0
+            return tf.constant(np.reshape(m, [height, width, channels, -1]), dtype=tf.float32)
+
+        def _architecture(inputs, reuse=None):
+            dim = opts['adv_c_patches_size']
+            height = int(inputs.get_shape()[1])
+            width = int(inputs.get_shape()[2])
+            channels = int(inputs.get_shape()[3])
+            with tf.variable_scope('DISC_X_LOSS', reuse=reuse):
+                num_units = opts['adv_c_num_units']
+                num_layers = 1
+                layer_x = inputs
+                for i in xrange(num_layers):
+#                     scale = 2**(num_layers-i-1)
+                    layer_x = ops.conv2d(opts, layer_x, num_units, d_h=1, d_w=1, scope='h%d_conv' % i,
+                                         conv_filters_dim=dim, padding='SAME')
+#                     if opts['batch_norm']:
+#                         layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
+                    layer_x = ops.lrelu(layer_x, 0.1)  #tf.nn.relu(layer_x)
+
+                copy_w = copy3D(dim, dim, channels)
+                duplicated = tf.nn.conv2d(inputs, copy_w, strides=[1, 1, 1, 1], padding='SAME')
+                decoded = ops.conv2d(
+                    opts, layer_x, channels * dim * dim, d_h=1, d_w=1, scope="decoder",
+                    conv_filters_dim=1, padding='SAME')
+            reconstruction = tf.reduce_mean(tf.square(tf.stop_gradient(duplicated) - decoded), [1, 2, 3])
+            assert len(reconstruction.get_shape()) == 1
+            return flatten(layer_x), reconstruction
+
+
+        reconstructed_embed_sg, adv_fake_layer = _architecture(tf.stop_gradient(reconstructed_training), reuse=None)
+        reconstructed_embed, _ = _architecture(reconstructed_training, reuse=True)
+        # Below line enforces the forward to be reconstructed_embed and backwards to NOT change the discriminator....
+        crazy_hack = reconstructed_embed-reconstructed_embed_sg+tf.stop_gradient(reconstructed_embed_sg)
+        real_p_embed_sg, adv_true_layer = _architecture(tf.stop_gradient(real_points), reuse=True)
+        real_p_embed, _ = _architecture(real_points, reuse=True)
+
+        adv_fake = tf.reduce_mean(adv_fake_layer)
+        adv_true = tf.reduce_mean(adv_true_layer)
+
+        adv_c_loss = tf.log(adv_true) - tf.log(adv_fake)
         emb_c = tf.reduce_sum(tf.square(crazy_hack - tf.stop_gradient(real_p_embed)), 1)
-        emb_c_loss = tf.reduce_mean(tf.sqrt(emb_c + 1e-5))
-        # Normalize the loss, so that it does not depend on how good the
-        # discriminator is.
-        emb_c_loss = emb_c_loss / tf.stop_gradient(emb_c_loss)
+        emb_c_loss = tf.reduce_mean(emb_c)
+
         return adv_c_loss, emb_c_loss
 
     def _recon_loss_using_vgg(self, opts, reconstructed_training, real_points, is_training, keep_prob):
         """Build an additional loss using a pretrained VGG in X space."""
-        def vgg_16(inputs,
-                   is_training=False,
-                   dropout_keep_prob=0.5,
-                   scope='vgg_16',
-                   fc_conv_padding='VALID', reuse=None):
-            inputs = inputs * 255.0
-            inputs -= tf.constant([123.68, 116.779, 103.939], dtype=tf.float32)
-            with tf.variable_scope(scope, 'vgg_16', [inputs], reuse=reuse) as sc:
-              end_points_collection = sc.name + '_end_points'
-              end_points = {}
-              # Collect outputs for conv2d, fully_connected and max_pool2d.
-              with slim.arg_scope([slim.conv2d, slim.fully_connected, slim.max_pool2d],
-                                  outputs_collections=end_points_collection):
-                end_points['pool0'] = inputs
-                net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='conv1')
-                net = slim.max_pool2d(net, [2, 2], scope='pool1')
-                end_points['pool1'] = net
-                net = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
-                net = slim.max_pool2d(net, [2, 2], scope='pool2')
-                end_points['pool2'] = net
-                net = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
-                net = slim.max_pool2d(net, [2, 2], scope='pool3')
-                end_points['pool3'] = net
-                net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
-                net = slim.max_pool2d(net, [2, 2], scope='pool4')
-                end_points['pool4'] = net
-                net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
-                net = slim.max_pool2d(net, [2, 2], scope='pool5')
-                end_points['pool5'] = net
-          #       # Use conv2d instead of fully_connected layers.
-          #       net = slim.conv2d(net, 4096, [7, 7], padding=fc_conv_padding, scope='fc6')
-          #       net = slim.dropout(net, dropout_keep_prob, is_training=is_training,
-          #                          scope='dropout6')
-          #       net = slim.conv2d(net, 4096, [1, 1], scope='fc7')
-          #       net = slim.dropout(net, dropout_keep_prob, is_training=is_training,
-          #                          scope='dropout7')
-          #       net = slim.conv2d(net, num_classes, [1, 1],
-          #                         activation_fn=None,
-          #                         normalizer_fn=None,
-          #                         scope='fc8')
-                # Convert end_points_collection into a end_point dict.
-          #       end_points = slim.utils.convert_collection_to_dict(end_points_collection)
-                return net, end_points
 
         def _architecture(_inputs, reuse=None):
             _, end_points = vgg_16(_inputs, is_training=is_training, dropout_keep_prob=keep_prob, reuse=reuse)
@@ -766,7 +909,7 @@ class ImagePot(Pot):
                 outputs = []
                 for ln in ['pool1', 'pool2', 'pool3']:
                     output = end_points[ln]
-                    output = tf.reshape(output, [-1, np.prod([int(d) for d in output.get_shape()[1:]])])
+                    output = flatten(output)
                     outputs.append(output)
                 output = tf.concat(outputs, 1)
             elif layer_name.startswith('concat_w'):
@@ -777,13 +920,13 @@ class ImagePot(Pot):
                     num = lnum + 1
                     ln = 'pool%d' % num
                     output = end_points[ln]
-                    output = tf.reshape(output, [-1, np.prod([int(d) for d in output.get_shape()[1:]])])
+                    output = flatten(output)
                     # We sqrt the weight here because we use L2 after.
                     outputs.append(np.sqrt(float(weights[lnum])) * output)
                 output = tf.concat(outputs, 1)
             else:
                 output = end_points[layer_name]
-                output = tf.reshape(output, [-1, np.prod([int(d) for d in output.get_shape()[1:]])])
+                output = flatten(output)
             if reuse is None:
                 variables_to_restore = slim.get_variables_to_restore(include=['vgg_16'])
                 path = os.path.join(opts['data_dir'], 'vgg_16.ckpt')
@@ -812,27 +955,7 @@ class ImagePot(Pot):
         """Build an additional loss using moments."""
 
         def _architecture(_inputs):
-            _inputs_sq = tf.square(_inputs)
-            height = int(_inputs.get_shape()[1])
-            width = int(_inputs.get_shape()[2])
-            channels = int(_inputs.get_shape()[3])
-            def ConvFlatten(x, kernel_size):
-#                 w_sum = tf.ones([kernel_size, kernel_size, channels, 1]) / (kernel_size * kernel_size * channels)
-                w_sum = tf.eye(num_rows=channels, num_columns=channels, batch_shape=[kernel_size * kernel_size])
-                w_sum = tf.reshape(w_sum, [kernel_size, kernel_size, channels, channels])
-                w_sum = w_sum / (kernel_size * kernel_size)
-                sum_ = tf.nn.conv2d(x, w_sum, strides=[1, 1, 1, 1], padding='VALID')
-                size = np.prod([int(d) for d in sum_.get_shape()[1:]])
-                assert size == (height - kernel_size + 1) * (width - kernel_size + 1) * channels, size
-                return tf.reshape(sum_, [-1, size])
-            outputs = []
-            for size in [3, 4, 5]:
-                mean = ConvFlatten(_inputs, size)
-                square = ConvFlatten(_inputs_sq, size)
-                var = square - tf.square(mean)
-#                 outputs += [mean, tf.sqrt(1e-5 + var)]
-                outputs += [var]
-            return tf.concat(outputs, 1)
+            return compute_moments(_inputs, moments=[2])  # TODO
 
         reconstructed_embed = _architecture(reconstructed_training)
         real_p_embed = _architecture(real_points)
@@ -840,7 +963,41 @@ class ImagePot(Pot):
         emb_c = tf.reduce_mean(tf.square(reconstructed_embed - tf.stop_gradient(real_p_embed)), 1)
 #         emb_c = tf.Print(emb_c, [emb_c], "emb_c")
         emb_c_loss = tf.reduce_mean(emb_c)
-        return emb_c_loss * 100.0 * 100.0 # TODO: constant
+        return emb_c_loss * 100.0 * 100.0 # TODO: constant.
+
+    def _recon_loss_using_vgg_moments(self, opts, reconstructed_training, real_points, is_training, keep_prob):
+        """Build an additional loss using a pretrained VGG in X space."""
+
+        def _architecture(_inputs, reuse=None):
+            _, end_points = vgg_16(_inputs, is_training=is_training, dropout_keep_prob=keep_prob, reuse=reuse)
+            layer_name = opts['vgg_layer']
+            output = end_points[layer_name]
+#             output = flatten(output)
+            output /= 255.0  # the vgg_16 method scales everything by 255.0, so we divide back here.
+            variances = compute_moments(output, moments=[2])
+
+            if reuse is None:
+                variables_to_restore = slim.get_variables_to_restore(include=['vgg_16'])
+                path = os.path.join(opts['data_dir'], 'vgg_16.ckpt')
+#                 '/tmpp/models/vgg_16.ckpt'
+                init_assign_op, init_feed_dict = slim.assign_from_checkpoint(path, variables_to_restore)
+                self._additional_init_ops += [init_assign_op]
+                self._init_feed_dict.update(init_feed_dict)
+            return variances
+
+        reconstructed_embed_sg = _architecture(tf.stop_gradient(reconstructed_training), reuse=None)
+        reconstructed_embed = _architecture(reconstructed_training, reuse=True)
+        # Below line enforces the forward to be reconstructed_embed and backwards to NOT change the discriminator....
+        crazy_hack = reconstructed_embed-reconstructed_embed_sg+tf.stop_gradient(reconstructed_embed_sg)
+        real_p_embed = _architecture(real_points, reuse=True)
+
+        emb_c = tf.reduce_mean(tf.square(crazy_hack - tf.stop_gradient(real_p_embed)), 1)
+        emb_c_loss = tf.reduce_mean(emb_c)
+#         emb_c_loss = tf.Print(emb_c_loss, [emb_c_loss], "emb_c_loss")
+#         # Normalize the loss, so that it does not depend on how good the
+#         # discriminator is.
+#         emb_c_loss = emb_c_loss / tf.stop_gradient(emb_c_loss)
+        return emb_c_loss   # TODO: constant.
 
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to POT implementation.
@@ -922,7 +1079,7 @@ class ImagePot(Pot):
         g_mom_stats = self.moments_stats(opts, encoded_training)
         loss = opts['reconstr_w'] * loss_reconstr + opts['pot_lambda'] * loss_gan
 
-        # Optionally, add a discriminator in the X space, reusing the encoder.
+        # Optionally, add a discriminator in the X space, reusing the encoder or a new model.
         if opts['adv_c_loss'] == 'encoder':
             adv_c_loss, emb_c_loss = self._recon_loss_using_disc_encoder(
                 opts, reconstructed_training, encoded_training, real_points, is_training_ph, keep_prob_ph)
@@ -931,8 +1088,13 @@ class ImagePot(Pot):
         elif opts['adv_c_loss'] == 'conv':
             adv_c_loss, emb_c_loss = self._recon_loss_using_disc_conv(
                 opts, reconstructed_training, real_points, is_training_ph, keep_prob_ph)
-            loss += opts['adv_c_loss_w'] * adv_c_loss + opts['emb_c_loss_w'] * emb_c_loss
             additional_losses['adv_c'], additional_losses['emb_c'] = adv_c_loss, emb_c_loss
+            loss += opts['adv_c_loss_w'] * adv_c_loss + opts['emb_c_loss_w'] * emb_c_loss
+        elif opts['adv_c_loss'] == 'conv_eb':
+            adv_c_loss, emb_c_loss = self._recon_loss_using_disc_conv_eb(
+                opts, reconstructed_training, real_points, is_training_ph, keep_prob_ph)
+            additional_losses['adv_c'], additional_losses['emb_c'] = adv_c_loss, emb_c_loss
+            loss += opts['adv_c_loss_w'] * adv_c_loss + opts['emb_c_loss_w'] * emb_c_loss
         elif opts['adv_c_loss'] == 'vgg':
             emb_c_loss = self._recon_loss_using_vgg(
                 opts, reconstructed_training, real_points, is_training_ph, keep_prob_ph)
@@ -940,6 +1102,11 @@ class ImagePot(Pot):
             additional_losses['emb_c'] = emb_c_loss
         elif opts['adv_c_loss'] == 'moments':
             emb_c_loss = self._recon_loss_using_moments(
+                opts, reconstructed_training, real_points, is_training_ph, keep_prob_ph)
+            loss += opts['emb_c_loss_w'] * emb_c_loss
+            additional_losses['emb_c'] = emb_c_loss
+        elif opts['adv_c_loss'] == 'vgg_moments':
+            emb_c_loss = self._recon_loss_using_vgg_moments(
                 opts, reconstructed_training, real_points, is_training_ph, keep_prob_ph)
             loss += opts['emb_c_loss_w'] * emb_c_loss
             additional_losses['emb_c'] = emb_c_loss

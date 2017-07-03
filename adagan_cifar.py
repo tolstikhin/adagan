@@ -110,7 +110,10 @@ def main():
     opts['adv_c_loss'] = 'none'
     opts['vgg_layer'] = 'pool2'
     opts['adv_c_patches_size'] = 5
+    opts['adv_c_num_units'] = 32
     opts['adv_c_loss_w'] = 0.0
+    opts['cross_p_w'] = 0.0
+    opts['diag_p_w'] = 0.0
     opts['emb_c_loss_w'] = 0.0
     opts['reconstr_w'] = 1.0
     opts['z_test'] = 'gan'
