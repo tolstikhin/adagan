@@ -450,7 +450,7 @@ class ImagePot(Pot):
             for i in range(num_layers-1):
                 hi = tf.nn.relu(hi)
                 hi = ops.linear(opts, hi, num_units, scope='h%d_lin' % (i+1))
-        hi = ops.linear(opts, hi, 1, scope='final_lin')
+            hi = ops.linear(opts, hi, 1, scope='final_lin')
         return hi
 
     def get_batch_size(self, opts, input_):
