@@ -442,7 +442,6 @@ class ImagePot(Pot):
         """Discriminator for the GAN objective
 
         """
-
         num_units = opts['d_num_filters']
         num_layers = opts['d_num_layers']
         # No convolutions as GAN happens in the latent space
@@ -451,7 +450,7 @@ class ImagePot(Pot):
             for i in range(num_layers-1):
                 hi = tf.nn.relu(hi)
                 hi = ops.linear(opts, hi, num_units, scope='h%d_lin' % (i+1))
-
+        hi = ops.linear(opts, hi, 1, scope='final_lin')
         return hi
 
     def get_batch_size(self, opts, input_):
@@ -1027,6 +1026,10 @@ class ImagePot(Pot):
             enc_train_mean, enc_log_sigmas = self.encoder(
                 opts, real_points,
                 is_training=is_training_ph, keep_prob=keep_prob_ph)
+            # enc_log_sigmas = tf.Print(enc_log_sigmas, [tf.reduce_max(enc_log_sigmas),
+            #                                            tf.reduce_min(enc_log_sigmas),
+            #                                            tf.reduce_mean(enc_log_sigmas)], 'Log sigmas:')
+            # enc_log_sigmas = tf.Print(enc_log_sigmas, [tf.slice(enc_log_sigmas, [0,0], [1,-1])], 'Log sigmas:')
             scaled_noise = tf.multiply(
                 tf.sqrt(tf.exp(enc_log_sigmas)), enc_noise_ph)
             encoded_training = enc_train_mean + scaled_noise
