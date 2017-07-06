@@ -446,10 +446,10 @@ class ImagePot(Pot):
         num_layers = opts['d_num_layers']
         # No convolutions as GAN happens in the latent space
         with tf.variable_scope(prefix, reuse=reuse):
-            hi = ops.linear(opts, input_, num_units, scope='h0_lin')
-            for i in range(num_layers-1):
-                hi = tf.nn.relu(hi)
+            hi = input_
+            for i in range(num_layers):
                 hi = ops.linear(opts, hi, num_units, scope='h%d_lin' % (i+1))
+                hi = tf.nn.relu(hi)
             hi = ops.linear(opts, hi, 1, scope='final_lin')
         return hi
 
