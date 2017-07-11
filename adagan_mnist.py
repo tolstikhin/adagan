@@ -42,7 +42,7 @@ def main():
     opts['conditional'] = False
     opts['unrolled'] = FLAGS.unrolled # Use Unrolled GAN? (only for images)
     opts['unrolling_steps'] = 5 # Used only if unrolled = True
-    opts['data_dir'] = 'mnist'
+    opts['data_dir'] = 'mnist_data_test'
     opts['trained_model_path'] = 'models'
     opts['mnist_trained_model_file'] = 'mnist_trainSteps_19999_yhat' # 'mnist_trainSteps_20000'
     opts['gmm_max_val'] = 15.

@@ -1331,7 +1331,8 @@ class ImagePot(Pot):
                         counter,
                         None,
                         np.vstack(to_plot),
-                        prefix='sample_e%04d_mb%05d_' % (_epoch, _idx))
+                        prefix='sample_e%04d_mb%05d_' % (_epoch, _idx) if rec_test is None \
+                                else 'sample_with_test_e%04d_mb%05d_' % (_epoch, _idx))
 
                     # --Reconstructions for the train and test points
                     num_real_p = 8 * 10
