@@ -85,6 +85,9 @@ class DataHandler(object):
                           'guitars',
                           'cifar10']
 
+        if opts['input_normalize_sym'] and opts['dataset'] not in sym_applicable:
+            opts['input_normalize_sym'] = False
+
         if opts['input_normalize_sym'] and opts['dataset'] in sym_applicable:
             # Normalize data to [-1, 1]
             self.data = (self.data - 0.5) * 2.

@@ -19,11 +19,11 @@ from metrics import Metrics
 import utils
 
 flags = tf.app.flags
-flags.DEFINE_float("g_learning_rate", 0.001,
+flags.DEFINE_float("g_learning_rate", 0.01,
                    "Learning rate for Generator optimizers [16e-4]")
-flags.DEFINE_float("d_learning_rate", 0.0001,
+flags.DEFINE_float("d_learning_rate", 0.004,
                    "Learning rate for Discriminator optimizers [4e-4]")
-flags.DEFINE_float("learning_rate", 0.0008,
+flags.DEFINE_float("learning_rate", 0.008,
                    "Learning rate for other optimizers [8e-4]")
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
 flags.DEFINE_integer("zdim", 5, "Dimensionality of the latent space [100]")
@@ -36,18 +36,18 @@ FLAGS = flags.FLAGS
 def main():
     opts = {}
     opts['random_seed'] = 821
-    opts['dataset'] = 'gmm' # gmm, circle_gmm,  mnist, mnist3 ...
+    opts['dataset'] = 'gmm' # gmm, circle_gmm,  mnist, mnist3, cifar ...
     opts['unrolled'] = FLAGS.unrolled # Use Unrolled GAN? (only for images)
     opts['unrolling_steps'] = 5 # Used only if unrolled = True
     opts['data_dir'] = 'mnist'
     opts['trained_model_path'] = 'models'
     opts['mnist_trained_model_file'] = 'mnist_trainSteps_19999_yhat' # 'mnist_trainSteps_20000'
     opts['gmm_max_val'] = 15.
-    opts['toy_dataset_size'] = 256 * 1000
+    opts['toy_dataset_size'] = 64 * 1000
     opts['toy_dataset_dim'] = 2
     opts['mnist3_dataset_size'] = 2 * 64 # 64 * 2500
     opts['mnist3_to_channels'] = False # Hide 3 digits of MNIST to channels
-    opts['input_normalize_sym'] = True # Normalize data to [-1, 1]
+    opts['input_normalize_sym'] = False # Normalize data to [-1, 1], applicable only for image datasets
     opts['adagan_steps_total'] = 10
     opts['samples_per_component'] = 5000 # 50000
     opts['work_dir'] = FLAGS.workdir
@@ -59,8 +59,8 @@ def main():
     opts["init_std"] = FLAGS.init_std
     opts["init_bias"] = 0.0
     opts['latent_space_distr'] = 'normal' # uniform, normal
-    opts['optimizer'] = 'adam' # sgd, adam
-    opts["batch_size"] = 256
+    opts['optimizer'] = 'sgd' # sgd, adam
+    opts["batch_size"] = 64
     opts["d_steps"] = 1
     opts["g_steps"] = 1
     opts["verbose"] = True

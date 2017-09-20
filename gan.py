@@ -284,11 +284,12 @@ class ToyGan(Gan):
             indexes the points, which all are of the shape (dim1, dim2, dim3).
         """
         output_shape = self._data.data_shape
+        num_filters = opts['g_num_filters']
 
         with tf.variable_scope("GENERATOR", reuse=reuse):
-            h0 = ops.linear(opts, noise, 500, 'h0_lin')
+            h0 = ops.linear(opts, noise, num_filters, 'h0_lin')
             h0 = tf.nn.relu(h0)
-            h1 = ops.linear(opts, h0, 500, 'h1_lin')
+            h1 = ops.linear(opts, h0, num_filters, 'h1_lin')
             h1 = tf.nn.relu(h1)
             h2 = ops.linear(opts, h1, np.prod(output_shape), 'h2_lin')
             h2 = tf.reshape(h2, [-1] + list(output_shape))
@@ -296,7 +297,7 @@ class ToyGan(Gan):
         if opts['input_normalize_sym']:
             return tf.nn.tanh(h2)
         else:
-            return tf.nn.sigmoid(h2)
+            return h2
 
     def discriminator(self, opts, input_,
                       prefix='DISCRIMINATOR', reuse=False):
@@ -304,12 +305,13 @@ class ToyGan(Gan):
 
         """
         shape = input_.get_shape().as_list()
+        num_filters = opts['d_num_filters']
         assert len(shape) > 0, 'No inputs to discriminate.'
 
         with tf.variable_scope(prefix, reuse=reuse):
-            h0 = ops.linear(opts, input_, 500, 'h0_lin')
+            h0 = ops.linear(opts, input_, num_filters, 'h0_lin')
             h0 = tf.nn.relu(h0)
-            h1 = ops.linear(opts, h0, 500, 'h1_lin')
+            h1 = ops.linear(opts, h0, num_filters, 'h1_lin')
             h1 = tf.nn.relu(h1)
             h2 = ops.linear(opts, h1, 1, 'h2_lin')
 
@@ -490,11 +492,12 @@ class ToyUnrolledGan(ToyGan):
             indexes the points, which all are of the shape (dim1, dim2, dim3).
         """
         output_shape = self._data.data_shape
+        num_filters = opts['g_num_filters']
 
         with tf.variable_scope("GENERATOR", reuse=reuse):
-            h0 = ops.linear(opts, noise, 500, 'h0_lin')
+            h0 = ops.linear(opts, noise, num_filters, 'h0_lin')
             h0 = tf.nn.tanh(h0)
-            h1 = ops.linear(opts, h0, 500, 'h1_lin')
+            h1 = ops.linear(opts, h0, num_filters, 'h1_lin')
             h1 = tf.nn.tanh(h1)
             h2 = ops.linear(opts, h1, np.prod(output_shape), 'h2_lin')
             h2 = tf.reshape(h2, [-1] + list(output_shape))
@@ -502,7 +505,7 @@ class ToyUnrolledGan(ToyGan):
         if opts['input_normalize_sym']:
             return tf.nn.tanh(h2)
         else:
-            return tf.nn.sigmoid(h2)
+            return h2
 
     def discriminator(self, opts, input_,
                       prefix='DISCRIMINATOR', reuse=False):
@@ -510,12 +513,13 @@ class ToyUnrolledGan(ToyGan):
 
         """
         shape = input_.get_shape().as_list()
+        num_filters = opts['d_num_filters']
         assert len(shape) > 0, 'No inputs to discriminate.'
 
         with tf.variable_scope(prefix, reuse=reuse):
-            h0 = ops.linear(opts, input_, 500, 'h0_lin')
+            h0 = ops.linear(opts, input_, num_filters, 'h0_lin')
             h0 = tf.nn.tanh(h0)
-            h1 = ops.linear(opts, h0, 500, 'h1_lin')
+            h1 = ops.linear(opts, h0, num_filters, 'h1_lin')
             h1 = tf.nn.tanh(h1)
             h2 = ops.linear(opts, h1, 1, 'h2_lin')
 
