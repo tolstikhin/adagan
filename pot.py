@@ -423,7 +423,7 @@ class ImagePot(Pot):
                     if opts['batch_norm']:
                         layer_x = ops.batch_norm(
                             opts, layer_x, is_training, reuse, scope='bn%d' % i)
-                out = ops.linear(opts, layer_x, np.prod(output_shape), 'h3_lin')
+                out = ops.linear(opts, layer_x, np.prod(output_shape), 'h%d_lin' % (i + 1))
                 out = tf.reshape(out, [-1] + list(output_shape))
                 if opts['input_normalize_sym']:
                     return tf.nn.tanh(out)

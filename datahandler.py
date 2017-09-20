@@ -231,6 +231,7 @@ class DataHandler(object):
 
         X = np.concatenate((tr_X, te_X), axis=0)
         y = np.concatenate((tr_Y, te_Y), axis=0)
+        X = X / 255.
 
         seed = 123
         np.random.seed(seed)
@@ -240,9 +241,14 @@ class DataHandler(object):
         np.random.seed()
 
         self.data_shape = (28, 28, 1)
-        self.data = X / 255.
+        self.data = X
         self.labels = y
-        self.num_points = len(X)
+
+        self.data = X[:-1000]
+        self.test_data = X[-1000:]
+        self.labels = y[:-1000]
+        self.test_labels = y[-1000:]
+        self.num_points = len(self.data)
 
         logging.debug('Loading Done.')
 
