@@ -542,7 +542,6 @@ class Metrics(object):
         if fake_points[0].shape[-1] == 1:
             image = image[:, :, 0]
             ax = plt.imshow(image, cmap='Greys', interpolation='none')
-            plt.show()
         elif opts['dataset'] == 'mnist3':
             ax = plt.imshow(image, cmap='Greys', interpolation='none')
         else:
