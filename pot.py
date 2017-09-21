@@ -480,6 +480,8 @@ class ImagePot(Pot):
             test_v = self.discriminator_anderson_test(opts, input_)
         elif opts['z_test'] == 'moments':
             test_v = tf.reduce_mean(self.moments_stats(opts, input_)) / 10.0
+        elif opts['z_test'] == 'ksd':
+            test_v = self.discriminator_ksd_test(opts, input_)
         else:
             raise ValueError('%s Unknown' % opts['z_test'])
         return test_v
@@ -547,6 +549,35 @@ class ImagePot(Pot):
         #stat = tf.Print(stat, [stat], "stat")
         return stat
 
+    def discriminator_ksd_test(self, opts, input_):
+        """Deterministic discriminator using Kernel Stein Discrepancy test
+        refer to LKS test on page 3 of https://arxiv.org/pdf/1705.07673.pdf
+
+        The statistic basically reads:
+            \[
+                \frac{2}{n}\sum_{i=1}^n \left(
+                    <x_{2i}, x_{2i - 1}> + d/\sigma^2 - 2\|x_{2i} - x_{2i - 1}\|^2/\sigma^2
+                \right)
+                \exp( - \|x_{2i} - x_{2i - 1}\|^2/2/\sigma^2
+            \]
+
+        """
+        batch_size = self.get_batch_size(opts, input_)
+        batch_size = tf.cast(batch_size, tf.int32)
+        half_size = batch_size / 2
+        s1 = tf.slice(input_, [0, 0], [half_size, -1])
+        s1 = tf.Print(s1, [s1], 'S1')
+        s2 = tf.slice(input_, [half_size, 0], [half_size, -1])
+        dotprods = tf.reduce_sum(tf.multiply(s1, s2), axis=1)
+        distances = tf.reduce_sum(tf.square(s1 - s2), axis=1)
+        # Median heuristic for the sigma^2 of Gaussian kernel
+        sigma2 = tf.nn.top_k(distances, half_size / 2).values[half_size / 2 - 1]
+        sigma2 = tf.Print(sigma2, [sigma2], 'Sigma2')
+        res = dotprods + (opts['latent_space_dim'] - 2 * distances) / sigma2
+        res = tf.multiply(res, tf.exp(- distances / 2./ sigma2))
+        stat = tf.reduce_mean(res)
+        return stat
+
     def correlation_loss(self, opts, input_):
         batch_size = self.get_batch_size(opts, input_)
         dim = int(input_.get_shape()[1])
@@ -572,22 +603,21 @@ class ImagePot(Pot):
     def encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
 
         num_units = opts['e_num_filters']
+        num_layers = opts['e_num_layers']
         with tf.variable_scope("ENCODER", reuse=reuse):
             if not opts['convolutions']:
-                h0 = ops.linear(opts, input_, 1024, 'h0_lin')
-                h0 = tf.nn.relu(h0)
-                h1 = ops.linear(opts, h0, 512, 'h1_lin')
-                h1 = tf.nn.relu(h1)
-                h2 = ops.linear(opts, h1, 512, 'h2_lin')
-                h2 = tf.nn.relu(h2)
+                hi = input_
+                for i in range(num_layers):
+                    hi = ops.linear(opts, hi, num_units, scope='h%d_lin' % i)
+                    hi = tf.nn.relu(hi)
                 if opts['e_is_random']:
                     latent_mean = ops.linear(
-                        opts, h2, opts['latent_space_dim'], 'h3_lin')
+                        opts, hi, opts['latent_space_dim'], 'h%d_lin' % (i + 1))
                     log_latent_sigmas = ops.linear(
-                        opts, h2, opts['latent_space_dim'], 'h3_lin_sigma')
+                        opts, hi, opts['latent_space_dim'], 'h%d_lin_sigma' % (i + 1))
                     return latent_mean, log_latent_sigmas
                 else:
-                    return ops.linear(opts, h2, opts['latent_space_dim'], 'h3_lin')
+                    return ops.linear(opts, hi, opts['latent_space_dim'], 'h%d_lin' % (i + 1))
             elif opts['e_arch'] == 'dcgan':
                 return self.dcgan_encoder(opts, input_, is_training, reuse, keep_prob)
             elif opts['e_arch'] == 'ali':
