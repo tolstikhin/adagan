@@ -566,13 +566,13 @@ class ImagePot(Pot):
         batch_size = tf.cast(batch_size, tf.int32)
         half_size = batch_size / 2
         s1 = tf.slice(input_, [0, 0], [half_size, -1])
-        s1 = tf.Print(s1, [s1], 'S1')
+        # s1 = tf.Print(s1, [s1], 'S1')
         s2 = tf.slice(input_, [half_size, 0], [half_size, -1])
         dotprods = tf.reduce_sum(tf.multiply(s1, s2), axis=1)
         distances = tf.reduce_sum(tf.square(s1 - s2), axis=1)
         # Median heuristic for the sigma^2 of Gaussian kernel
         sigma2 = tf.nn.top_k(distances, half_size / 2).values[half_size / 2 - 1]
-        sigma2 = tf.Print(sigma2, [sigma2], 'Sigma2')
+        # sigma2 = tf.Print(sigma2, [sigma2], 'Sigma2')
         res = dotprods + (opts['latent_space_dim'] - 2 * distances) / sigma2
         res = tf.multiply(res, tf.exp(- distances / 2./ sigma2))
         stat = tf.reduce_mean(res)
