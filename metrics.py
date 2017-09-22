@@ -471,7 +471,6 @@ class Metrics(object):
         plt.savefig(utils.o_gfile((opts["work_dir"], filename), 'wb'),
                     format='png')
 
-
     def _make_plots_pics(self, opts, step, real_points,
                          fake_points, weights=None, prefix='', max_rows=16):
         pics = []
@@ -569,10 +568,8 @@ class Metrics(object):
             if self.Qz is not  None:
                 # Plotting the Qz scatter plot
                 plt.subplot(gs[1,1])
-                # plt.scatter(self.Pz[:,0], self.Pz[:,1], s = 2, color = 'blue')
                 plt.scatter(self.Qz[:,0], self.Qz[:,1], s = 20,
                             edgecolors='face', c = self.Qz_labels)
-                # plt.scatter(self.Qz[:,0], self.Qz[:,1], s = 10, color='blue')
         # Saving
         filename = prefix + 'mixture{:06d}.png'.format(step)
         utils.create_dir(opts['work_dir'])

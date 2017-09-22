@@ -98,6 +98,9 @@ def prod_dim(tensor):
 def flatten(tensor):
     return tf.reshape(tensor, [-1, prod_dim(tensor)])
 
+
+
+
 class Pot(object):
     """A base class for running individual POTs.
 
@@ -1027,6 +1030,75 @@ class ImagePot(Pot):
 #         emb_c_loss = emb_c_loss / tf.stop_gradient(emb_c_loss)
         return emb_c_loss   # TODO: constant.
 
+    def add_least_gaussian2d_ops(self, opts):
+        """ Add ops searching for the 2d plane in z_dim hidden space
+            corresponding to the 'least Gaussian' look of the sample
+        """
+
+        with tf.variable_scope('leastGaussian2d'):
+            # Projection matrix which we are going to tune
+            sample_ph = tf.placeholder(
+                tf.float32, [None, opts['latent_space_dim']],
+                name='sample_ph')
+            v = tf.get_variable(
+                "proj_v", [opts['latent_space_dim'], 1],
+                tf.float32, tf.random_normal_initializer(stddev=1.))
+            u = tf.get_variable(
+                "proj_u", [opts['latent_space_dim'], 1],
+                tf.float32, tf.random_normal_initializer(stddev=1.))
+        npoints = tf.cast(tf.shape(sample_ph)[0], tf.int32)
+        # First we need to make sure projection matrix is orthogonal
+        v_norm = tf.nn.l2_normalize(v, 0)
+        dotprod = tf.reduce_sum(tf.multiply(u, v_norm))
+        u_ort = u - dotprod * v_norm
+        u_norm = tf.nn.l2_normalize(u_ort, 0)
+        Mproj = tf.concat([v_norm, u_norm], 1)
+        a = tf.eye(npoints) - tf.ones([npoints, npoints]) / tf.cast(npoints, tf.float32)
+        b = tf.matmul(sample_ph, tf.square(a), transpose_a=True)
+        b = tf.matmul(b, sample_ph)
+        c = tf.matmul(Mproj, b, transpose_a=True)
+        # Sample covariance matrix
+        covhat = tf.matmul(c, Mproj) / (tf.cast(npoints, tf.float32) - 1)
+        # covhat = tf.Print(covhat, [covhat], 'Cov:')
+        with tf.variable_scope('leastGaussian2d'):
+            gcov = opts['pot_pz_std'] * opts['pot_pz_std'] * tf.eye(2)
+            # l2 distance between sample cov and the Gaussian cov
+            projloss =  tf.reduce_sum(tf.square(covhat - gcov))
+            projloss = -projloss
+            optim = tf.train.AdamOptimizer(0.001, 0.9)
+            optim = optim.minimize(projloss, var_list=[v, u])
+
+        self._proj_u = u_norm
+        self._proj_v = v_norm
+        self._proj_sample_ph = sample_ph
+        self._proj_covhat = covhat
+        self._proj_loss = projloss
+        self._proj_optim = optim
+
+    def least_gaussian_2d(self, opts, X):
+        """Given a sample X of shape (n_points, n_z) find 2d plain
+           such that projection looks least gaussian.
+        """
+
+        # X = opts['pot_pz_std'] * utils.generate_noise(opts, 1000)
+        with self._session.as_default(), self._session.graph.as_default():
+            sample_ph = self._proj_sample_ph
+            optim = self._proj_optim
+            loss = self._proj_loss
+            u = self._proj_u
+            v = self._proj_v
+            covhat = self._proj_covhat
+            for _start in xrange(1):
+                # We will run 5 times from random inits
+                proj_vars = tf.get_collection(
+                    tf.GraphKeys.GLOBAL_VARIABLES, scope="leastGaussian2d")
+                self._session.run(tf.variables_initializer(proj_vars))
+                for _ in xrange(5000):
+                    self._session.run(optim, feed_dict={sample_ph:X})
+                    #print loss.eval(feed_dict={sample_ph: X})
+
+        return tf.concat([v, u], 1).eval()
+
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to POT implementation.
 
@@ -1151,6 +1223,11 @@ class ImagePot(Pot):
         else:
             assert opts['adv_c_loss'] == 'none'
 
+        # Also add ops to find the least Gaussian 2d projection 
+        # this is handy when visually inspection Qz = Pz
+        self.add_least_gaussian2d_ops(opts)
+
+        # Optimizer ops
         t_vars = tf.trainable_variables()
         # Updates for discriminator
         d_vars = [var for var in t_vars if 'DISCRIMINATOR/' in var.name]
@@ -1292,7 +1369,7 @@ class ImagePot(Pot):
                 now = time.time()
 
                 rec_test = None
-                if opts['verbose'] and counter % 100 == 0:
+                if opts['verbose'] and counter % 10 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data
                     [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, additional_losses] = self._session.run(
@@ -1341,13 +1418,16 @@ class ImagePot(Pot):
                             self._is_training_ph: False,
                             self._keep_prob_ph: 1e5})
                     Qz_num = 1000
-                    metrics.Qz = self._session.run(
+                    sample_Qz = self._session.run(
                         self._Qz,
                         feed_dict={
                             self._real_points_ph: self._data.data[:Qz_num],
                             self._enc_noise_ph: utils.generate_noise(opts, Qz_num),
                             self._is_training_ph: False,
                             self._keep_prob_ph: 1e5})
+                    # Searching least Gaussian 2d
+                    proj_mat = self.least_gaussian_2d(opts, sample_Qz)
+                    metrics.Qz = np.dot(sample_Qz, proj_mat)
                     metrics.Qz_labels = self._data.labels[:Qz_num]
                     metrics.Pz = batch_noise
                     # l2s.append(np.sum((points_to_plot - sample_prev)**2))
@@ -1363,6 +1443,7 @@ class ImagePot(Pot):
                         np.vstack(to_plot),
                         prefix='sample_e%04d_mb%05d_' % (_epoch, _idx) if rec_test is None \
                                 else 'sample_with_test_e%04d_mb%05d_' % (_epoch, _idx))
+
 
                     # --Reconstructions for the train and test points
                     num_real_p = 8 * 10
