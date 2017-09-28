@@ -483,8 +483,8 @@ class ImagePot(Pot):
             test_v = self.discriminator_anderson_test(opts, input_)
         elif opts['z_test'] == 'moments':
             test_v = tf.reduce_mean(self.moments_stats(opts, input_)) / 10.0
-        elif opts['z_test'] == 'ksd':
-            test_v = self.discriminator_ksd_test(opts, input_)
+        elif opts['z_test'] == 'lks':
+            test_v = self.discriminator_lks_test(opts, input_)
         else:
             raise ValueError('%s Unknown' % opts['z_test'])
         return test_v
@@ -552,16 +552,18 @@ class ImagePot(Pot):
         #stat = tf.Print(stat, [stat], "stat")
         return stat
 
-    def discriminator_ksd_test(self, opts, input_):
+    def discriminator_lks_test(self, opts, input_):
         """Deterministic discriminator using Kernel Stein Discrepancy test
         refer to LKS test on page 3 of https://arxiv.org/pdf/1705.07673.pdf
 
         The statistic basically reads:
             \[
                 \frac{2}{n}\sum_{i=1}^n \left(
-                    <x_{2i}, x_{2i - 1}> + d/\sigma^2 - 2\|x_{2i} - x_{2i - 1}\|^2/\sigma^2
+                    frac{<x_{2i}, x_{2i - 1}>}{\sigma_p^4}
+                    + d/\sigma_k^2
+                    - \|x_{2i} - x_{2i - 1}\|^2\left(\frac{1}{\sigma_p^2\sigma_k^2} + \frac{1}{\sigma_k^4}\right)
                 \right)
-                \exp( - \|x_{2i} - x_{2i - 1}\|^2/2/\sigma^2
+                \exp( - \|x_{2i} - x_{2i - 1}\|^2/2/\sigma_k^2)
             \]
 
         """
@@ -574,10 +576,12 @@ class ImagePot(Pot):
         dotprods = tf.reduce_sum(tf.multiply(s1, s2), axis=1)
         distances = tf.reduce_sum(tf.square(s1 - s2), axis=1)
         # Median heuristic for the sigma^2 of Gaussian kernel
-        sigma2 = tf.nn.top_k(distances, half_size / 2).values[half_size / 2 - 1]
-        # sigma2 = tf.Print(sigma2, [sigma2], 'Sigma2')
-        res = dotprods + (opts['latent_space_dim'] - 2 * distances) / sigma2
-        res = tf.multiply(res, tf.exp(- distances / 2./ sigma2))
+        sigma2_k = tf.nn.top_k(distances, half_size / 2).values[half_size / 2 - 1]
+        sigma2_p = opts['pot_pz_std'] ** 2 # var = std ** 2
+        res = dotprods / sigma2_p ** 2 \
+              - distances * (1. / sigma2_p / sigma2_k + 1. / sigma2_k ** 2) \
+              + opts['latent_space_dim'] / sigma2_k
+        res = tf.multiply(res, tf.exp(- distances / 2./ sigma2_k))
         stat = tf.reduce_mean(res)
         return stat
 
@@ -1088,16 +1092,24 @@ class ImagePot(Pot):
             u = self._proj_u
             v = self._proj_v
             covhat = self._proj_covhat
+            loss_prev = 10e5
             for _start in xrange(1):
-                # We will run 5 times from random inits
+                # We will run 1 times from random inits
                 proj_vars = tf.get_collection(
                     tf.GraphKeys.GLOBAL_VARIABLES, scope="leastGaussian2d")
                 self._session.run(tf.variables_initializer(proj_vars))
+                step = 0
                 for _ in xrange(5000):
                     self._session.run(optim, feed_dict={sample_ph:X})
-                    #print loss.eval(feed_dict={sample_ph: X})
+                    step += 1
+                    if step % 10 == 0:
+                        loss_cur = loss.eval(feed_dict={sample_ph: X})
+                        rel_imp = abs(loss_cur - loss_prev) / abs(loss_prev)
+                        if rel_imp < 1e-05:
+                            break
+                        loss_prev = loss_cur
 
-        return tf.concat([v, u], 1).eval()
+        return tf.concat([v, u], 1).eval(), tf.reduce_sum(tf.multiply(u, v)).eval()
 
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to POT implementation.
@@ -1304,11 +1316,11 @@ class ImagePot(Pot):
 
             if opts['decay_schedule'] == "manual":
                 if _epoch == 30:
-                    decay = decay / 5.
+                    decay = decay / 2.
                 if _epoch == 50:
-                    decay = decay / 10.
+                    decay = decay / 5.
                 if _epoch == 100:
-                    decay = decay / 100.
+                    decay = decay / 10.
             else:
                 assert type(1.0 * opts['decay_schedule']) == float
                 decay = 1.0 * 10**(-_epoch / float(opts['decay_schedule']))
@@ -1425,13 +1437,12 @@ class ImagePot(Pot):
                             self._enc_noise_ph: utils.generate_noise(opts, Qz_num),
                             self._is_training_ph: False,
                             self._keep_prob_ph: 1e5})
-                    # Searching least Gaussian 2d
-                    proj_mat = self.least_gaussian_2d(opts, sample_Qz)
+                    # Searching least Gaussian 2d projection
+                    proj_mat, check = self.least_gaussian_2d(opts, sample_Qz)
+                    # Projecting samples from Qz and Pz on this 2d plain
                     metrics.Qz = np.dot(sample_Qz, proj_mat)
+                    metrics.Pz = np.dot(self._noise_for_plots, proj_mat)
                     metrics.Qz_labels = self._data.labels[:Qz_num]
-                    metrics.Pz = batch_noise
-                    # l2s.append(np.sum((points_to_plot - sample_prev)**2))
-                    # metrics.l2s = l2s[:]
                     metrics.l2s = losses[:]
                     to_plot = [points_to_plot, 0 * batch_images[:16], batch_images]
                     if rec_test is not None:

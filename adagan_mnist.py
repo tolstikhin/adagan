@@ -49,7 +49,7 @@ def main():
     opts["verbose"] = 1
     opts['tf_run_batch_size'] = 128
     opts["early_stop"] = -1 # set -1 to run normally
-    opts["plot_every"] = 10
+    opts["plot_every"] = 50
     opts["save_every_epoch"] = 10
     opts['gmm_max_val'] = 15.
 

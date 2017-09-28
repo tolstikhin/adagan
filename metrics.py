@@ -568,8 +568,22 @@ class Metrics(object):
             if self.Qz is not  None:
                 # Plotting the Qz scatter plot
                 plt.subplot(gs[1,1])
-                plt.scatter(self.Qz[:,0], self.Qz[:,1], s = 20,
-                            edgecolors='face', c = self.Qz_labels)
+                # plt.scatter(self.Qz[:,0], self.Qz[:,1], s=20,
+                #             edgecolors='face', c=self.Qz_labels)
+                plt.scatter(self.Qz[:,0], self.Qz[:,1], s=20, marker='x',
+                            edgecolors='face', c=self.Qz_labels, label='Qz')
+                plt.scatter(self.Pz[:,0], self.Pz[:,1], color='red', s=200, marker='*', label='Pz')
+                xmin = np.min(self.Qz[:,0])
+                xmin = xmin - abs(xmin) * 0.2
+                xmax = np.max(self.Qz[:,0])
+                xmax = xmax + abs(xmax) * 0.2
+                ymin = np.min(self.Qz[:,1])
+                ymin = ymin - abs(ymin) * 0.2
+                ymax = np.max(self.Qz[:,1])
+                ymax = ymax + abs(ymax) * 0.2
+                plt.xlim(xmin, xmax)
+                plt.ylim(ymin, ymax)
+                plt.legend(loc='upper left')
         # Saving
         filename = prefix + 'mixture{:06d}.png'.format(step)
         utils.create_dir(opts['work_dir'])
