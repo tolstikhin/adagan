@@ -574,13 +574,15 @@ class Metrics(object):
                             edgecolors='face', c=self.Qz_labels, label='Qz')
                 plt.scatter(self.Pz[:,0], self.Pz[:,1], color='red', s=200, marker='*', label='Pz')
                 xmin = np.min(self.Qz[:,0])
-                xmin = xmin - abs(xmin) * 0.2
                 xmax = np.max(self.Qz[:,0])
-                xmax = xmax + abs(xmax) * 0.2
+                width = abs(xmax - xmin)
+                xmin = xmin - width * 0.1
+                xmax = xmax + width * 0.1
                 ymin = np.min(self.Qz[:,1])
-                ymin = ymin - abs(ymin) * 0.2
                 ymax = np.max(self.Qz[:,1])
-                ymax = ymax + abs(ymax) * 0.2
+                width = abs(ymin - ymax)
+                ymin = ymin - width * 0.1
+                ymax = ymax + width * 0.1
                 plt.xlim(xmin, xmax)
                 plt.ylim(ymin, ymax)
                 plt.legend(loc='upper left')

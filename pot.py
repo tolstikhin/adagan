@@ -1057,17 +1057,20 @@ class ImagePot(Pot):
         u_ort = u - dotprod * v_norm
         u_norm = tf.nn.l2_normalize(u_ort, 0)
         Mproj = tf.concat([v_norm, u_norm], 1)
+        sample_proj = tf.matmul(sample_ph, Mproj)
         a = tf.eye(npoints) - tf.ones([npoints, npoints]) / tf.cast(npoints, tf.float32)
-        b = tf.matmul(sample_ph, tf.square(a), transpose_a=True)
-        b = tf.matmul(b, sample_ph)
-        c = tf.matmul(Mproj, b, transpose_a=True)
+        b = tf.matmul(sample_proj, tf.matmul(a, a), transpose_a=True)
+        b = tf.matmul(b, sample_proj)
         # Sample covariance matrix
-        covhat = tf.matmul(c, Mproj) / (tf.cast(npoints, tf.float32) - 1)
+        covhat = b / (tf.cast(npoints, tf.float32) - 1)
         # covhat = tf.Print(covhat, [covhat], 'Cov:')
         with tf.variable_scope('leastGaussian2d'):
             gcov = opts['pot_pz_std'] * opts['pot_pz_std'] * tf.eye(2)
             # l2 distance between sample cov and the Gaussian cov
             projloss =  tf.reduce_sum(tf.square(covhat - gcov))
+            # Also account for the first moment, i.e. expected value
+            projloss += tf.reduce_sum(tf.square(tf.reduce_mean(sample_proj, 0)))
+            # We are maximizing
             projloss = -projloss
             optim = tf.train.AdamOptimizer(0.001, 0.9)
             optim = optim.minimize(projloss, var_list=[v, u])
@@ -1080,11 +1083,10 @@ class ImagePot(Pot):
         self._proj_optim = optim
 
     def least_gaussian_2d(self, opts, X):
-        """Given a sample X of shape (n_points, n_z) find 2d plain
-           such that projection looks least gaussian.
         """
-
-        # X = opts['pot_pz_std'] * utils.generate_noise(opts, 1000)
+        Given a sample X of shape (n_points, n_z) find 2d plain
+        such that projection looks least gaussian.
+        """
         with self._session.as_default(), self._session.graph.as_default():
             sample_ph = self._proj_sample_ph
             optim = self._proj_optim
@@ -1092,9 +1094,10 @@ class ImagePot(Pot):
             u = self._proj_u
             v = self._proj_v
             covhat = self._proj_covhat
-            loss_prev = 10e5
-            for _start in xrange(1):
-                # We will run 1 times from random inits
+            best_of_runs = 10e5 # Any positive value would do
+            for _start in xrange(3):
+                # We will run 3 times from random inits
+                loss_prev = 10e5 # Any positive value would do
                 proj_vars = tf.get_collection(
                     tf.GraphKeys.GLOBAL_VARIABLES, scope="leastGaussian2d")
                 self._session.run(tf.variables_initializer(proj_vars))
@@ -1108,8 +1111,13 @@ class ImagePot(Pot):
                         if rel_imp < 1e-05:
                             break
                         loss_prev = loss_cur
+                loss_final = loss.eval(feed_dict={sample_ph: X})
+                if loss_final < best_of_runs:
+                    best_of_runs = loss_final
+                    proj_mat = tf.concat([v, u], 1).eval()
+                    dot_prod = tf.reduce_sum(tf.multiply(u, v)).eval()
 
-        return tf.concat([v, u], 1).eval(), tf.reduce_sum(tf.multiply(u, v)).eval()
+        return proj_mat, dot_prod
 
     def _build_model_internal(self, opts):
         """Build the Graph corresponding to POT implementation.
