@@ -561,7 +561,7 @@ class Metrics(object):
             else:
                 plt.subplot(gs[1,0])
             x = np.arange(1, len(self.l2s) + 1) * opts['plot_every']
-            y = np.array(self.l2s)
+            y = np.array([el if abs(el) < 1e2 else 1e2 for el in self.l2s])
             # delta = 0. if min(y) >= 0. else abs(min(y))
             # y = np.log(1e-07 + delta + y)
             plt.plot(x, y)

@@ -567,6 +567,8 @@ class ImagePot(Pot):
             \]
 
         """
+        # To check the typical sizes of the test for Pz = Qz, uncomment
+        # input_ = opts['pot_pz_std'] * utils.generate_noise(opts, 1000)
         batch_size = self.get_batch_size(opts, input_)
         batch_size = tf.cast(batch_size, tf.int32)
         half_size = batch_size / 2
@@ -1314,6 +1316,7 @@ class ImagePot(Pot):
         sample_prev = np.zeros([num_plot] + list(self._data.data_shape))
         l2s = []
         losses = []
+        wait = 0
 
         start_time = time.time()
         counter = 0
@@ -1329,7 +1332,7 @@ class ImagePot(Pot):
                     decay = decay / 5.
                 if _epoch == 100:
                     decay = decay / 10.
-            else:
+            elif opts['decay_schedule'] != "plateau":
                 assert type(1.0 * opts['decay_schedule']) == float
                 decay = 1.0 * 10**(-_epoch / float(opts['decay_schedule']))
 
@@ -1363,6 +1366,20 @@ class ImagePot(Pot):
                                self._lr_decay_ph: decay,
                                self._is_training_ph: True,
                                self._keep_prob_ph: opts['dropout_keep_prob']})
+
+                if opts['decay_schedule'] == "plateau":
+                    # Look at last 2 epochs and see if any significant
+                    # progress has been made compared to the earlier
+                    # path. If not --- increase decay
+                    if len(losses) > 0:
+                        if loss < min(losses):
+                            wait = 0
+                        else:
+                            wait += 1
+                            if wait > 2 * batches_num:
+                                decay = max(decay  / 1.2, 1e-4)
+                                logging.error('Reduction in learning rate: %f' % decay)
+                                wait = 0
                 losses.append(loss)
 
                 # Update discriminator in Z space (if any).
