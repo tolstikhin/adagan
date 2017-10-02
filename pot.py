@@ -113,7 +113,7 @@ class Pot(object):
         self._data = data
         self._data_weights = np.copy(weights)
         # Latent noise sampled ones to apply decoder while training
-        self._noise_for_plots = opts['pot_pz_std'] * utils.generate_noise(opts, 500)
+        self._noise_for_plots = opts['pot_pz_std'] * utils.generate_noise(opts, 1000)
         # Placeholders
         self._real_points_ph = None
         self._noise_ph = None
@@ -1190,6 +1190,7 @@ class ImagePot(Pot):
             assert False
 
         loss_z_corr = self.correlation_loss(opts, encoded_training)
+        loss_z_lks = self.discriminator_lks_test(opts, encoded_training)
         if opts['z_test'] == 'gan':
             d_logits_Pz = self.discriminator(opts, noise_ph)
             d_logits_Qz = self.discriminator(opts, encoded_training, reuse=True)
@@ -1281,6 +1282,7 @@ class ImagePot(Pot):
         self._loss_reconstruct = loss_reconstr
         self._loss_gan = loss_gan
         self._loss_z_corr = loss_z_corr
+        self._loss_z_lks = loss_z_lks
         self._additional_losses = additional_losses
         self._g_mom_stats = g_mom_stats
         self._d_loss = d_loss
@@ -1406,11 +1408,12 @@ class ImagePot(Pot):
                 now = time.time()
 
                 rec_test = None
-                if opts['verbose'] and counter % 10 == 0:
+                if opts['verbose'] and counter % 50 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data
-                    [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, additional_losses] = self._session.run(
-                        [self._loss_reconstruct, self._reconstruct_x, self._g_mom_stats, self._loss_z_corr, self._additional_losses],
+                    [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, loss_z_lks, additional_losses] = self._session.run(
+                        [self._loss_reconstruct, self._reconstruct_x, self._g_mom_stats, self._loss_z_corr, self._loss_z_lks,
+                         self._additional_losses],
                         feed_dict={self._real_points_ph: test,
                                    self._enc_noise_ph: utils.generate_noise(opts, len(test)),
                                    self._is_training_ph: False,
@@ -1418,8 +1421,8 @@ class ImagePot(Pot):
                     debug_str = 'Epoch: %d/%d, batch:%d/%d, batch/sec:%.2f' % (
                         _epoch+1, opts['gan_epoch_num'], _idx+1,
                         batches_num, float(counter) / (now - start_time))
-                    debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g' % (
-                        loss, loss_rec, loss_gan, loss_rec_test)
+                    debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g, LKS=%.2g' % (
+                        loss, loss_rec, loss_gan, loss_rec_test, loss_z_lks)
                     debug_str += ',' + ', '.join(
                         ['%s=%.2g' % (k, v) for (k, v) in additional_losses.items()])
                     logging.error(debug_str)
