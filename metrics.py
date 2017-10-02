@@ -570,9 +570,9 @@ class Metrics(object):
                 plt.subplot(gs[1,1])
                 # plt.scatter(self.Qz[:,0], self.Qz[:,1], s=20,
                 #             edgecolors='face', c=self.Qz_labels)
+                plt.scatter(self.Pz[:,0], self.Pz[:,1], color='red', s=200, marker='*', label='Pz')
                 plt.scatter(self.Qz[:,0], self.Qz[:,1], s=20, marker='x',
                             edgecolors='face', c=self.Qz_labels, label='Qz')
-                plt.scatter(self.Pz[:,0], self.Pz[:,1], color='red', s=200, marker='*', label='Pz')
                 xmin = np.min(self.Qz[:,0])
                 xmax = np.max(self.Qz[:,0])
                 width = abs(xmax - xmin)
