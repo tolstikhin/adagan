@@ -568,7 +568,7 @@ class ImagePot(Pot):
 
         """
         # To check the typical sizes of the test for Pz = Qz, uncomment
-        # input_ = opts['pot_pz_std'] * utils.generate_noise(opts, 1000)
+        # input_ = opts['pot_pz_std'] * utils.generate_noise(opts, 100000)
         batch_size = self.get_batch_size(opts, input_)
         batch_size = tf.cast(batch_size, tf.int32)
         half_size = batch_size / 2
@@ -618,6 +618,8 @@ class ImagePot(Pot):
                 hi = input_
                 for i in range(num_layers):
                     hi = ops.linear(opts, hi, num_units, scope='h%d_lin' % i)
+                    if opts['batch_norm']:
+                        hi = ops.batch_norm(opts, hi, is_training, reuse, scope='bn%d' % i)
                     hi = tf.nn.relu(hi)
                 if opts['e_is_random']:
                     latent_mean = ops.linear(
@@ -1096,7 +1098,9 @@ class ImagePot(Pot):
             u = self._proj_u
             v = self._proj_v
             covhat = self._proj_covhat
+            proj_mat = tf.concat([v, u], 1).eval()
             best_of_runs = 10e5 # Any positive value would do
+            updated = False
             for _start in xrange(3):
                 # We will run 3 times from random inits
                 loss_prev = 10e5 # Any positive value would do
@@ -1115,10 +1119,12 @@ class ImagePot(Pot):
                         loss_prev = loss_cur
                 loss_final = loss.eval(feed_dict={sample_ph: X})
                 if loss_final < best_of_runs:
+                    updated = True
                     best_of_runs = loss_final
                     proj_mat = tf.concat([v, u], 1).eval()
                     dot_prod = tf.reduce_sum(tf.multiply(u, v)).eval()
-
+        if not updated:
+            logging.error('WARNING: possible buy in the worst 2d projection')
         return proj_mat, dot_prod
 
     def _build_model_internal(self, opts):
@@ -1154,8 +1160,9 @@ class ImagePot(Pot):
             #                                            tf.reduce_min(enc_log_sigmas),
             #                                            tf.reduce_mean(enc_log_sigmas)], 'Log sigmas:')
             # enc_log_sigmas = tf.Print(enc_log_sigmas, [tf.slice(enc_log_sigmas, [0,0], [1,-1])], 'Log sigmas:')
-            scaled_noise = tf.multiply(
-                tf.sqrt(tf.exp(enc_log_sigmas)), enc_noise_ph)
+            # stds = tf.sqrt(tf.exp(enc_log_sigmas) + 1e-05)
+            stds = tf.sqrt(tf.nn.relu(enc_log_sigmas) + 1e-05)
+            scaled_noise = tf.multiply(stds, enc_noise_ph)
             encoded_training = enc_train_mean + scaled_noise
         else:
             encoded_training = self.encoder(
@@ -1408,7 +1415,7 @@ class ImagePot(Pot):
                 now = time.time()
 
                 rec_test = None
-                if opts['verbose'] and counter % 50 == 0:
+                if opts['verbose'] and counter % 100 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data
                     [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, loss_z_lks, additional_losses] = self._session.run(
