@@ -1264,7 +1264,7 @@ class ImagePot(Pot):
         loss_z_corr = self.correlation_loss(opts, encoded_training)
         # Perform a Qz = Pz goodness of fit test based on Stein Discrepancy
         loss_z_lks = self.discriminator_lks_test(opts, encoded_training)
-        if opts['z_test'] == 'gan':
+        if opts['z_test'] in ['gan', 'gan_poole']:
             # Pz = Qz test based on GAN in the Z space
             d_logits_Pz = self.discriminator(opts, noise_ph)
             d_logits_Qz = self.discriminator(opts, encoded_training, reuse=True)
@@ -1275,7 +1275,16 @@ class ImagePot(Pot):
                 tf.nn.sigmoid_cross_entropy_with_logits(
                     logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
             d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
-            loss_match = -d_loss_Qz
+            if opts['z_test'] == 'gan':
+                loss_match = -d_loss_Qz
+            if opts['z_test'] == 'gan_poole':
+                # Improved GAN objective of Poole et al.
+                # See https://arxiv.org/pdf/1612.02780.pdf
+                # We use JS for discriminator and KL for generator
+                # dPmodel/dPdata(x) = (1 - D*(x)) / D*(x)
+                Dopt = tf.nn.sigmoid(d_logits_Qz)
+                ratio = Dopt/ (1. - Dopt)
+                loss_match = tf.reduce_mean(ratio * tf.log(ratio))
         elif opts['z_test'] == 'lks':
             # Pz = Qz test without adversarial training
             # based on Kernel Stein Discrepancy
