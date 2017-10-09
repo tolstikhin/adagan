@@ -98,9 +98,6 @@ def prod_dim(tensor):
 def flatten(tensor):
     return tf.reshape(tensor, [-1, prod_dim(tensor)])
 
-
-
-
 class Pot(object):
     """A base class for running individual POTs.
 
@@ -460,20 +457,32 @@ class ImagePot(Pot):
         return tf.cast(tf.shape(input_)[0], tf.float32)# opts['batch_size']
 
     def moments_stats(self, opts, input_):
-        input_ = input_ / opts['pot_pz_std']
+        """
+        Compute estimates of the first 4 moments of the coordinates
+        based on the sample in input_. Compare them to the desired
+        population values and return a corresponding loss.
+        """
+        input_ = input_ / float(opts['pot_pz_std'])
+        # If Pz = Qz then input_ should now come from 
+        # a product of pz_dim Gaussians N(0, 1)
+        # Thus first moments should be 0
         p1 = tf.reduce_mean(input_, 0)
-        center_inp = input_ - p1
+        center_inp = input_ - p1 # Broadcasting
+        # Second centered and normalized moments should be 1
         p2 = tf.sqrt(1e-5 + tf.reduce_mean(tf.square(center_inp), 0))
         normed_inp = center_inp / p2
-        p3 = tf.pow(1e-5 + tf.abs(tf.reduce_mean(tf.pow(normed_inp, 3), 0)), 1.0 / 3.0)
-        # Because 3 is the right Kurtosis for N(0, 1)
-        p4 = tf.pow(1e-5 + tf.reduce_mean(tf.pow(normed_inp, 4), 0) / 3.0, 1.0 / 4.0)
+        # Third central moment should be 0
+        # p3 = tf.pow(1e-5 + tf.abs(tf.reduce_mean(tf.pow(center_inp, 3), 0)), 1.0 / 3.0)
+        p3 = tf.abs(tf.reduce_mean(tf.pow(center_inp, 3), 0))
+        # 4th central moment of any uni-variate Gaussian = 3 * sigma^4
+        # p4 = tf.pow(1e-5 + tf.reduce_mean(tf.pow(center_inp, 4), 0) / 3.0, 1.0 / 4.0)
+        p4 = tf.reduce_mean(tf.pow(center_inp, 4), 0) / 3.
         def zero_t(v):
             return tf.sqrt(1e-5 + tf.reduce_mean(tf.square(v)))
         def one_t(v):
+            # The function below takes its minimum value 1. at v = 1.
             return tf.sqrt(1e-5 + tf.reduce_mean(tf.maximum(tf.square(v), 1.0 / (1e-5 + tf.square(v)))))
         return tf.stack([zero_t(p1), one_t(p2), zero_t(p3), one_t(p4)])
-#         return tf.stack([mse(p1), mse(p2), mse(p3), mse(p4)])
 
     def discriminator_test(self, opts, input_):
         """Deterministic discriminator using simple tests."""
@@ -532,27 +541,34 @@ class ImagePot(Pot):
         """Deterministic discriminator using the Anderson Darling test.
 
         """
+        # A-D test says to normalize data before computing the statistic
+        # Because true mean and variance are known, we are supposed to use
+        # the population parameters for that, but wiki says it's better to
+        # still use the sample estimates while normalizing
+        means = tf.reduce_mean(input_, 0)
+        input_ = input_ - means # Broadcasting
+        stds = tf.sqrt(1e-5 + tf.reduce_mean(tf.square(input_), 0))
+        input_= input_ / stds
         # top_k can only sort on the last dimension and we want to sort the
         # first one (batch_size).
         batch_size = self.get_batch_size(opts, input_)
         transposed = tf.transpose(input_, perm=[1, 0])
         values, indices = tf.nn.top_k(transposed, k=tf.cast(batch_size, tf.int32))
         values = tf.reverse(values, [1])
-        #values = tf.Print(values, [values], "sorted values")
         normal_dist = tf.contrib.distributions.Normal(0., float(opts['pot_pz_std']))
-        #
         normal_cdf = normal_dist.cdf(values)
-        #normal_cdf = tf.Print(normal_cdf, [normal_cdf], "normal_cdf")
+        # ln_normal_cdf is of shape (z_dim, batch_size)
         ln_normal_cdf = tf.log(normal_cdf)
         ln_one_normal_cdf = tf.log(1.0 - normal_cdf)
-        w1 = 2 * tf.range(1, batch_size+1, 1, dtype="float") - 1
-        w2 = 2 * tf.range(batch_size-1, -1, -1, dtype="float") + 1
-        stat = -batch_size - tf.reduce_sum(w1 * ln_normal_cdf + w2 * ln_one_normal_cdf, 1) / batch_size
-        stat = tf.reduce_mean(stat)
-        #stat = tf.Print(stat, [stat], "stat")
+        w1 = 2 * tf.range(1, batch_size + 1, 1, dtype="float") - 1
+        w2 = 2 * tf.range(batch_size - 1, -1, -1, dtype="float") + 1
+        stat = -batch_size - tf.reduce_sum(w1 * ln_normal_cdf + \
+                                           w2 * ln_one_normal_cdf, 1) / batch_size
+        # stat is of shape (z_dim)
+        stat = tf.reduce_mean(tf.square(stat))
         return stat
 
-    def discriminator_lks_test(self, opts, input_):
+    def discriminator_lks_lin_test(self, opts, input_):
         """Deterministic discriminator using Kernel Stein Discrepancy test
         refer to LKS test on page 3 of https://arxiv.org/pdf/1705.07673.pdf
 
@@ -572,13 +588,16 @@ class ImagePot(Pot):
         batch_size = self.get_batch_size(opts, input_)
         batch_size = tf.cast(batch_size, tf.int32)
         half_size = batch_size / 2
-        s1 = tf.slice(input_, [0, 0], [half_size, -1])
-        # s1 = tf.Print(s1, [s1], 'S1')
-        s2 = tf.slice(input_, [half_size, 0], [half_size, -1])
+        # s1 = tf.slice(input_, [0, 0], [half_size, -1])
+        # s2 = tf.slice(input_, [half_size, 0], [half_size, -1])
+        s1 = input_[:half_size, :]
+        s2 = input_[half_size:, :]
         dotprods = tf.reduce_sum(tf.multiply(s1, s2), axis=1)
         distances = tf.reduce_sum(tf.square(s1 - s2), axis=1)
         # Median heuristic for the sigma^2 of Gaussian kernel
-        sigma2_k = tf.nn.top_k(distances, half_size / 2).values[half_size / 2 - 1]
+        # sigma2_k = tf.nn.top_k(distances, half_size / 2).values[half_size / 2 - 1]
+        sigma2_k = opts['latent_space_dim']
+        # sigma2_k = tf.Print(sigma2_k, [sigma2_k], 'Kernel width:')
         sigma2_p = opts['pot_pz_std'] ** 2 # var = std ** 2
         res = dotprods / sigma2_p ** 2 \
               - distances * (1. / sigma2_p / sigma2_k + 1. / sigma2_k ** 2) \
@@ -587,20 +606,63 @@ class ImagePot(Pot):
         stat = tf.reduce_mean(res)
         return stat
 
+
+    def discriminator_lks_test(self, opts, input_):
+        """Deterministic discriminator using Kernel Stein Discrepancy test
+        refer to the quadratic test of https://arxiv.org/pdf/1705.07673.pdf
+
+        The statistic basically reads:
+            \[
+                \frac{1}{n^2 - n}\sum_{i \neq j} \left(
+                    frac{<x_i, x__j>}{\sigma_p^4}
+                    + d/\sigma_k^2
+                    - \|x_i - x_j\|^2\left(\frac{1}{\sigma_p^2\sigma_k^2} + \frac{1}{\sigma_k^4}\right)
+                \right)
+                \exp( - \|x_i - x_j\|^2/2/\sigma_k^2)
+            \]
+
+        """
+        n = self.get_batch_size(opts, input_)
+        n = tf.cast(n, tf.int32)
+        nf = tf.cast(n, tf.float32)
+        norms = tf.reduce_sum(tf.square(input_), axis=1, keep_dims=True)
+        dotprods = tf.matmul(input_, input_, transpose_b=True)
+        distances = norms + tf.transpose(norms) - 2. * dotprods
+        # Median heuristic for the sigma^2 of Gaussian kernel
+        # sigma2_k = tf.nn.top_k(distances, half_size / 2).values[half_size / 2 - 1]
+        sigma2_k = opts['latent_space_dim']
+        # sigma2_k = tf.Print(sigma2_k, [sigma2_k], 'Kernel width:')
+        sigma2_p = opts['pot_pz_std'] ** 2 # var = std ** 2
+        res = dotprods / sigma2_p ** 2 \
+              - distances * (1. / sigma2_p / sigma2_k + 1. / sigma2_k ** 2) \
+              + opts['latent_space_dim'] / sigma2_k
+        res = tf.multiply(res, tf.exp(- distances / 2./ sigma2_k))
+        res = tf.multiply(res, 1. - tf.eye(n))
+        stat = tf.reduce_sum(res) / (nf * nf - nf)
+        return stat
+
     def correlation_loss(self, opts, input_):
+        """
+        Independence test based on Pearson's correlation.
+        Keep in mind that this captures only linear dependancies.
+        However, for multivariate Gaussian independence is equivalent
+        to zero correlation.
+        """
+
         batch_size = self.get_batch_size(opts, input_)
         dim = int(input_.get_shape()[1])
         transposed = tf.transpose(input_, perm=[1, 0])
-        # print("transposed shape", transposed.get_shape())
         mean = tf.reshape(tf.reduce_mean(transposed, axis=1), [-1, 1])
-        centered_transposed = transposed - mean
-        cov = tf.matmul(centered_transposed, tf.transpose(centered_transposed)) / batch_size
+        centered_transposed = transposed - mean # Broadcasting mean
+        cov = tf.matmul(centered_transposed, centered_transposed, transpose_b=True)
+        cov = cov / (batch_size - 1)
         #cov = tf.Print(cov, [cov], "cov")
         sigmas = tf.sqrt(tf.diag_part(cov) + 1e-5)
         #sigmas = tf.Print(sigmas, [sigmas], "sigmas")
         sigmas = tf.reshape(sigmas, [1, -1])
-        sigmas = tf.matmul(tf.transpose(sigmas), sigmas)
+        sigmas = tf.matmul(sigmas, sigmas, transpose_a=True)
         #sigmas = tf.Print(sigmas, [sigmas], "sigmas")
+        # Pearson's correlation
         corr = cov / sigmas
         triangle = tf.matrix_set_diag(tf.matrix_band_part(corr, 0, -1), tf.zeros(dim))
         #triangle = tf.Print(triangle, [triangle], "triangle")
@@ -1162,6 +1224,8 @@ class ImagePot(Pot):
             # enc_log_sigmas = tf.Print(enc_log_sigmas, [tf.slice(enc_log_sigmas, [0,0], [1,-1])], 'Log sigmas:')
             # stds = tf.sqrt(tf.exp(enc_log_sigmas) + 1e-05)
             stds = tf.sqrt(tf.nn.relu(enc_log_sigmas) + 1e-05)
+            # stds = tf.Print(stds, [stds[0], stds[1], stds[2], stds[3]], 'Stds: ')
+            # stds = tf.Print(stds, [enc_train_mean[0], enc_train_mean[1], enc_train_mean[2]], 'Means: ')
             scaled_noise = tf.multiply(stds, enc_noise_ph)
             encoded_training = enc_train_mean + scaled_noise
         else:
@@ -1196,9 +1260,12 @@ class ImagePot(Pot):
         else:
             assert False
 
+        # Pearson independence test of coordinates in Z space
         loss_z_corr = self.correlation_loss(opts, encoded_training)
+        # Perform a Qz = Pz goodness of fit test based on Stein Discrepancy
         loss_z_lks = self.discriminator_lks_test(opts, encoded_training)
         if opts['z_test'] == 'gan':
+            # Pz = Qz test based on GAN in the Z space
             d_logits_Pz = self.discriminator(opts, noise_ph)
             d_logits_Qz = self.discriminator(opts, encoded_training, reuse=True)
             d_loss_Pz = tf.reduce_mean(
@@ -1208,15 +1275,30 @@ class ImagePot(Pot):
                 tf.nn.sigmoid_cross_entropy_with_logits(
                     logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
             d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
-            loss_gan = -d_loss_Qz
-        else:
+            loss_match = -d_loss_Qz
+        elif opts['z_test'] == 'lks':
+            # Pz = Qz test without adversarial training
+            # based on Kernel Stein Discrepancy
             d_loss = None
-            loss_gan = self.discriminator_test(opts, encoded_training)
-            loss_gan = loss_gan + opts['z_test_corr_w'] * loss_z_corr
+            # Uncomment next line to check for the real Pz
+            # loss_match = self.discriminator_test(opts, noise_ph)
+            loss_match = self.discriminator_test(opts, encoded_training)
+            d_logits_Pz = None
+            d_logits_Qz = None
+        else:
+            # Pz = Qz test without adversarial training
+            # (a) Check for multivariate Gaussianity
+            #     by checking Gaussianity of all the 1d projections
+            # (b) Run Pearson's test of coordinate independance
+            d_loss = None
+            loss_match = self.discriminator_test(opts, encoded_training)
+            loss_match = loss_match + opts['z_test_corr_w'] * loss_z_corr
             d_logits_Pz = None
             d_logits_Qz = None
         g_mom_stats = self.moments_stats(opts, encoded_training)
-        loss = opts['reconstr_w'] * loss_reconstr + opts['pot_lambda'] * loss_gan
+        # uncomment next to check for Gaussian
+        # g_mom_stats = self.moments_stats(opts, noise_ph)
+        loss = opts['reconstr_w'] * loss_reconstr + opts['pot_lambda'] * loss_match
 
         # Optionally, add one more cost function based on the embeddings
         # add a discriminator in the X space, reusing the encoder or a new model.
@@ -1287,7 +1369,7 @@ class ImagePot(Pot):
         self._d_optim = d_optim
         self._loss = loss
         self._loss_reconstruct = loss_reconstr
-        self._loss_gan = loss_gan
+        self._loss_match = loss_match
         self._loss_z_corr = loss_z_corr
         self._loss_z_lks = loss_z_lks
         self._additional_losses = additional_losses
@@ -1364,11 +1446,11 @@ class ImagePot(Pot):
                 batch_enc_noise = utils.generate_noise(opts, opts['batch_size'])
 
                 # Update generator (decoder) and encoder
-                [_, loss, loss_rec, loss_gan] = self._session.run(
+                [_, loss, loss_rec, loss_match] = self._session.run(
                     [self._optim,
                      self._loss,
                      self._loss_reconstruct,
-                     self._loss_gan],
+                     self._loss_match],
                     feed_dict={self._real_points_ph: batch_images,
                                self._noise_ph: batch_noise,
                                self._enc_noise_ph: batch_enc_noise,
@@ -1390,6 +1472,8 @@ class ImagePot(Pot):
                                 logging.error('Reduction in learning rate: %f' % decay)
                                 wait = 0
                 losses.append(loss)
+                if opts['verbose'] >= 2:
+                    print 'Mean loss after %d steps : %f' % (counter, np.mean(losses))
 
                 # Update discriminator in Z space (if any).
                 if self._d_optim is not None:
@@ -1415,7 +1499,7 @@ class ImagePot(Pot):
                 now = time.time()
 
                 rec_test = None
-                if opts['verbose'] and counter % 100 == 0:
+                if opts['verbose'] and counter % 50 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data
                     [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, loss_z_lks, additional_losses] = self._session.run(
@@ -1424,12 +1508,13 @@ class ImagePot(Pot):
                         feed_dict={self._real_points_ph: test,
                                    self._enc_noise_ph: utils.generate_noise(opts, len(test)),
                                    self._is_training_ph: False,
+                                   self._noise_ph: batch_noise,
                                    self._keep_prob_ph: 1e5})
                     debug_str = 'Epoch: %d/%d, batch:%d/%d, batch/sec:%.2f' % (
                         _epoch+1, opts['gan_epoch_num'], _idx+1,
                         batches_num, float(counter) / (now - start_time))
                     debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g, LKS=%.2g' % (
-                        loss, loss_rec, loss_gan, loss_rec_test, loss_z_lks)
+                        loss, loss_rec, loss_match, loss_rec_test, loss_z_lks)
                     debug_str += ',' + ', '.join(
                         ['%s=%.2g' % (k, v) for (k, v) in additional_losses.items()])
                     logging.error(debug_str)
