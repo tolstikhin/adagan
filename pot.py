@@ -444,6 +444,7 @@ class ImagePot(Pot):
         """
         num_units = opts['d_num_filters']
         num_layers = opts['d_num_layers']
+        nowozin_trick = opts['gan_p_trick']
         # No convolutions as GAN happens in the latent space
         with tf.variable_scope(prefix, reuse=reuse):
             hi = input_
@@ -451,6 +452,17 @@ class ImagePot(Pot):
                 hi = ops.linear(opts, hi, num_units, scope='h%d_lin' % (i+1))
                 hi = tf.nn.relu(hi)
             hi = ops.linear(opts, hi, 1, scope='final_lin')
+        if nowozin_trick:
+            # We are doing GAN between our model Qz and the true Pz.
+            # We know analytical form of the true Pz.
+            # The optimal discriminator for D_JS(Pz, Qz) is given by:
+            # Dopt(x) = log dPz(x) - log dQz(x)
+            # And we know exactly dPz(x). So add dPz(x) explicitly 
+            # to the discriminator and let it learn only the remaining
+            # dQz(x) term. This appeared in the AVB paper.
+            assert opts['latent_space_distr'] == 'normal'
+            normsq = tf.reduce_sum(tf.square(input_), 1)
+            hi = hi - normsq / 2. / float(opts['pot_pz_std']) ** 2
         return hi
 
     def get_batch_size(self, opts, input_):
@@ -1176,7 +1188,8 @@ class ImagePot(Pot):
                     if step % 10 == 0:
                         loss_cur = loss.eval(feed_dict={sample_ph: X})
                         rel_imp = abs(loss_cur - loss_prev) / abs(loss_prev)
-                        if rel_imp < 1e-05:
+                        print loss_cur, rel_imp
+                        if rel_imp < 1e-2:
                             break
                         loss_prev = loss_cur
                 loss_final = loss.eval(feed_dict={sample_ph: X})
@@ -1264,7 +1277,7 @@ class ImagePot(Pot):
         loss_z_corr = self.correlation_loss(opts, encoded_training)
         # Perform a Qz = Pz goodness of fit test based on Stein Discrepancy
         loss_z_lks = self.discriminator_lks_test(opts, encoded_training)
-        if opts['z_test'] in ['gan', 'gan_poole']:
+        if opts['z_test'] == 'gan':
             # Pz = Qz test based on GAN in the Z space
             d_logits_Pz = self.discriminator(opts, noise_ph)
             d_logits_Qz = self.discriminator(opts, encoded_training, reuse=True)
@@ -1275,16 +1288,7 @@ class ImagePot(Pot):
                 tf.nn.sigmoid_cross_entropy_with_logits(
                     logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
             d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
-            if opts['z_test'] == 'gan':
-                loss_match = -d_loss_Qz
-            if opts['z_test'] == 'gan_poole':
-                # Improved GAN objective of Poole et al.
-                # See https://arxiv.org/pdf/1612.02780.pdf
-                # We use JS for discriminator and KL for generator
-                # dPmodel/dPdata(x) = (1 - D*(x)) / D*(x)
-                Dopt = tf.nn.sigmoid(d_logits_Qz)
-                ratio = Dopt/ (1. - Dopt)
-                loss_match = tf.reduce_mean(ratio * tf.log(ratio))
+            loss_match = -d_loss_Qz
         elif opts['z_test'] == 'lks':
             # Pz = Qz test without adversarial training
             # based on Kernel Stein Discrepancy
@@ -1508,7 +1512,7 @@ class ImagePot(Pot):
                 now = time.time()
 
                 rec_test = None
-                if opts['verbose'] and counter % 50 == 0:
+                if opts['verbose'] and counter % 100 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data
                     [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, loss_z_lks, additional_losses] = self._session.run(
