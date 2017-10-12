@@ -117,6 +117,7 @@ def main():
     opts['emb_c_loss_w'] = 1.0
     opts['reconstr_w'] = 0.0
     opts['z_test'] = 'gan'
+    opts['gan_p_trick'] = False
     opts['z_test_corr_w'] = 1.0
     opts['z_test_proj_dim'] = 10
 
