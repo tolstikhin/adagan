@@ -457,12 +457,15 @@ class ImagePot(Pot):
             # We know analytical form of the true Pz.
             # The optimal discriminator for D_JS(Pz, Qz) is given by:
             # Dopt(x) = log dPz(x) - log dQz(x)
-            # And we know exactly dPz(x). So add dPz(x) explicitly 
+            # And we know exactly dPz(x). So add log dPz(x) explicitly 
             # to the discriminator and let it learn only the remaining
             # dQz(x) term. This appeared in the AVB paper.
             assert opts['latent_space_distr'] == 'normal'
+            sigma2_p = float(opts['pot_pz_std']) ** 2
             normsq = tf.reduce_sum(tf.square(input_), 1)
-            hi = hi - normsq / 2. / float(opts['pot_pz_std']) ** 2
+            hi = hi - normsq / 2. / sigma2_p \
+                    - 0.5 * tf.log(2. * np.pi) \
+                    - 0.5 * opts['latent_space_dim'] * np.log(sigma2_p)
         return hi
 
     def get_batch_size(self, opts, input_):
@@ -1188,7 +1191,6 @@ class ImagePot(Pot):
                     if step % 10 == 0:
                         loss_cur = loss.eval(feed_dict={sample_ph: X})
                         rel_imp = abs(loss_cur - loss_prev) / abs(loss_prev)
-                        print loss_cur, rel_imp
                         if rel_imp < 1e-2:
                             break
                         loss_prev = loss_cur
@@ -1292,10 +1294,10 @@ class ImagePot(Pot):
         elif opts['z_test'] == 'lks':
             # Pz = Qz test without adversarial training
             # based on Kernel Stein Discrepancy
-            d_loss = None
             # Uncomment next line to check for the real Pz
             # loss_match = self.discriminator_test(opts, noise_ph)
             loss_match = self.discriminator_test(opts, encoded_training)
+            d_loss = None
             d_logits_Pz = None
             d_logits_Qz = None
         else:
@@ -1303,14 +1305,12 @@ class ImagePot(Pot):
             # (a) Check for multivariate Gaussianity
             #     by checking Gaussianity of all the 1d projections
             # (b) Run Pearson's test of coordinate independance
-            d_loss = None
             loss_match = self.discriminator_test(opts, encoded_training)
             loss_match = loss_match + opts['z_test_corr_w'] * loss_z_corr
+            d_loss = None
             d_logits_Pz = None
             d_logits_Qz = None
         g_mom_stats = self.moments_stats(opts, encoded_training)
-        # uncomment next to check for Gaussian
-        # g_mom_stats = self.moments_stats(opts, noise_ph)
         loss = opts['reconstr_w'] * loss_reconstr + opts['pot_lambda'] * loss_match
 
         # Optionally, add one more cost function based on the embeddings
@@ -1420,6 +1420,8 @@ class ImagePot(Pot):
         sample_prev = np.zeros([num_plot] + list(self._data.data_shape))
         l2s = []
         losses = []
+        losses_rec = []
+        losses_match = []
         wait = 0
 
         start_time = time.time()
@@ -1472,21 +1474,24 @@ class ImagePot(Pot):
                                self._keep_prob_ph: opts['dropout_keep_prob']})
 
                 if opts['decay_schedule'] == "plateau":
-                    # Look at last 2 epochs and see if any significant
-                    # progress has been made compared to the earlier
-                    # path. If not --- increase decay
-                    if len(losses) > 0:
-                        if loss < min(losses):
+                    # First 30 epochs do nothing
+                    if _epoch >= 30:
+                        # If no significant progress was made in last 5 epochs 
+                        # then decrease the learning rate.
+                        if loss < min(losses[-20 * batches_num:]):
                             wait = 0
                         else:
                             wait += 1
-                            if wait > 2 * batches_num:
-                                decay = max(decay  / 1.2, 1e-4)
-                                logging.error('Reduction in learning rate: %f' % decay)
-                                wait = 0
+                        if wait > 5 * batches_num:
+                            decay = max(decay  / 1.4, 1e-6)
+                            logging.error('Reduction in learning rate: %f' % decay)
+                            wait = 0
                 losses.append(loss)
+                losses_rec.append(loss_rec)
+                losses_match.append(loss_match)
                 if opts['verbose'] >= 2:
-                    print 'Mean loss after %d steps : %f' % (counter, np.mean(losses))
+                    print 'loss after %d steps : %f' % (counter, losses[-1])
+                    print 'loss match  after %d steps : %f' % (counter, losses_match[-1])
 
                 # Update discriminator in Z space (if any).
                 if self._d_optim is not None:
@@ -1577,6 +1582,8 @@ class ImagePot(Pot):
                     metrics.Pz = np.dot(self._noise_for_plots, proj_mat)
                     metrics.Qz_labels = self._data.labels[:Qz_num]
                     metrics.l2s = losses[:]
+                    metrics.losses_match = [opts['pot_lambda'] * el for el in losses_match]
+                    metrics.losses_rec = [opts['reconstr_w'] * el for el in losses_rec]
                     to_plot = [points_to_plot, 0 * batch_images[:16], batch_images]
                     if rec_test is not None:
                         to_plot += [0 * batch_images[:16], rec_test[:64]]
