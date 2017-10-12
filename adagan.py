@@ -43,7 +43,8 @@ class AdaGan(object):
         pic_datasets = ['mnist',
                         'mnist3',
                         'guitars',
-                        'cifar10']
+                        'cifar10',
+                        'celebA']
         supervised_pic_datasets = ['mnist',
                                    'mnist3',
                                    'cifar10']

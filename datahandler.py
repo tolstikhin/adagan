@@ -8,6 +8,7 @@
 
 import os
 import logging
+import tensorflow as tf
 import numpy as np
 from six.moves import cPickle
 import utils
@@ -77,6 +78,8 @@ class DataHandler(object):
             self._load_guitars(opts)
         elif opts['dataset'] == 'cifar10':
             self._load_cifar(opts)
+        elif opts['dataset'] == 'celebA':
+            self._load_celebA(opts)
         else:
             raise ValueError('Unknown %s' % opts['dataset'])
 
@@ -360,6 +363,47 @@ class DataHandler(object):
         self.test_data = X[-1000:]
         self.labels = y[:-1000]
         self.test_labels = y[-1000:]
+        self.num_points = len(self.data)
+
+        logging.debug('Loading Done.')
+
+    def _load_celebA(self, opts):
+        """Load CelebA
+
+        """
+        logging.debug('Loading CelebA dataset')
+
+        num_samples = 202599
+        data_dir = self._data_dir(opts)
+        pics = []
+        width = 178
+        height = 218
+        new_width = 64
+        new_height = 64
+        for i in range(1, num_samples + 1):
+            if i % 1000 == 0:
+                print '%d / %d' % (i, num_samples)
+            fname = '%.6d.jpg' % i
+            im = Image.open(utils.o_gfile((data_dir, fname), 'rb'))
+            left = (width - new_width) / 2
+            top = (height - new_height) / 2
+            right = (width + new_width) / 2
+            bottom = (height + new_height)/2
+            im = im.crop((left, top, right, bottom))
+            pics.append(np.array(im).reshape(new_width, new_height, 3))
+
+        X = np.array(pics)
+
+        seed = 123
+        np.random.seed(seed)
+        np.random.shuffle(X)
+        np.random.seed()
+
+        self.data_shape = (new_width, new_height, 3)
+        self.data = X/255.
+
+        self.data = X[:-10000]
+        self.test_data = X[-10000:]
         self.num_points = len(self.data)
 
         logging.debug('Loading Done.')

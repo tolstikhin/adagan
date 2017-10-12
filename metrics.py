@@ -27,6 +27,8 @@ class Metrics(object):
 
     def __init__(self):
         self.l2s = None
+        self.losses_match = None
+        self.losses_rec = None
         self.Qz = None
 
     def make_plots(self, opts, step, real_points,
@@ -44,7 +46,8 @@ class Metrics(object):
         pic_datasets = ['mnist',
                         'mnist3',
                         'guitars',
-                        'cifar10']
+                        'cifar10',
+                        'celebA']
         if opts['dataset'] == 'gmm':
             if opts['toy_dataset_dim'] == 1:
                 self._make_plots_1d(opts, step, real_points,
@@ -474,7 +477,7 @@ class Metrics(object):
     def _make_plots_pics(self, opts, step, real_points,
                          fake_points, weights=None, prefix='', max_rows=16):
         pics = []
-        if opts['dataset'] in ('mnist', 'mnist3', 'guitars', 'cifar10'):
+        if opts['dataset'] in ('mnist', 'mnist3', 'guitars', 'cifar10', 'celebA'):
             if opts['input_normalize_sym']:
                 if real_points is not None:
                     real_points = real_points / 2. + 0.5
@@ -562,9 +565,12 @@ class Metrics(object):
                 plt.subplot(gs[1,0])
             x = np.arange(1, len(self.l2s) + 1) * opts['plot_every']
             y = np.array([el if abs(el) < 1e2 else 1e2 for el in self.l2s])
-            # delta = 0. if min(y) >= 0. else abs(min(y))
-            # y = np.log(1e-07 + delta + y)
-            plt.plot(x, y)
+            plt.plot(x, y, color='red', label='loss')
+            y = np.array([el if abs(el) < 1e2 else 1e2 for el in self.losses_match])
+            plt.plot(x, y, color='blue', label='Qz=Pz loss')
+            y = np.array([el if abs(el) < 1e2 else 1e2 for el in self.losses_rec])
+            plt.plot(x, y, color='green', label='reconstruct loss')
+            plt.legend(loc='upper right')
             if self.Qz is not  None:
                 # Plotting the Qz scatter plot
                 plt.subplot(gs[1,1])
