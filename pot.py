@@ -1434,7 +1434,7 @@ class ImagePot(Pot):
     def pretrain(self, opts):
         steps_max = 50
         batch_size = opts['e_pretrain_bsize']
-        for steps in xrange(steps_max):
+        for step in xrange(steps_max):
             train_size = self._data.num_points
             data_ids = np.random.choice(train_size, min(train_size, batch_size),
                                         replace=False)
@@ -1453,6 +1453,9 @@ class ImagePot(Pot):
                            self._enc_noise_ph: batch_enc_noise,
                            self._is_training_ph: True,
                            self._keep_prob_ph: opts['dropout_keep_prob']})
+
+            if opts['verbose'] == 2:
+                print 'Step %d/%d, loss=%f' % (step, steps_max, loss_pretrain)
 
             if loss_pretrain < 0.1:
                 break
@@ -1482,6 +1485,7 @@ class ImagePot(Pot):
         if opts['e_pretrain']:
             logging.error('Pretraining the encoder')
             self.pretrain(opts)
+            logging.error('Pretraining the encoder done')
 
         for _epoch in xrange(opts["gan_epoch_num"]):
 
@@ -1573,7 +1577,7 @@ class ImagePot(Pot):
                 rec_test = None
                 if opts['verbose'] and counter % 100 == 0:
                     # Printing (training and test) loss values
-                    test = self._data.test_data
+                    test = self._data.test_data[:]
                     [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, loss_z_lks, additional_losses] = self._session.run(
                         [self._loss_reconstruct, self._reconstruct_x, self._g_mom_stats, self._loss_z_corr, self._loss_z_lks,
                          self._additional_losses],

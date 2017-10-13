@@ -479,8 +479,6 @@ class Metrics(object):
         pics = []
         if opts['dataset'] in ('mnist', 'mnist3', 'guitars', 'cifar10', 'celebA'):
             if opts['input_normalize_sym']:
-                if real_points is not None:
-                    real_points = real_points / 2. + 0.5
                 if fake_points is not None:
                     fake_points = fake_points / 2. + 0.5
         num_pics = len(fake_points)
