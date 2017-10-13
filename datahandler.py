@@ -7,11 +7,13 @@
 """
 
 import os
+import random
 import logging
 import tensorflow as tf
 import numpy as np
 from six.moves import cPickle
 import utils
+import PIL
 from PIL import Image
 import sys
 
@@ -44,6 +46,99 @@ def load_cifar_batch(fpath, label_key='labels'):
     data = data.reshape(data.shape[0], 3, 32, 32)
     return data, labels
 
+class Data(object):
+    """
+    If the dataset can be quickly loaded to memory self.X will contain np.ndarray
+    Otherwise we will be reading files as we train. In this case self.X is a structure:
+        self.X.paths        list of paths to the files containing pictures
+        self.X.dict_loaded  dictionary of (key, val), where key is the index of the
+                            already loaded datapoint and val is the corresponding index
+                            in self.X.loaded
+        self.X.loaded       list containing already loaded pictures
+    """
+    def __init__(self, X, data_dir=None, paths=None, dict_loaded=None, loaded=None):
+        """
+        X is either np.ndarray or paths
+        """
+        self.X = None
+        self.paths = None
+        self.dict_loaded = None
+        self.loaded = None
+        if isinstance(X, np.ndarray):
+            self.X = X
+        else:
+            assert isinstance(data_dir, str), 'Data directory not provided'
+            assert paths is not None and len(paths) > 0, 'No paths provided for the data'
+            self.data_dir = data_dir
+            self.paths = paths
+            self.dict_loaded = {} if dict_loaded is None else dict_loaded
+            self.loaded = [] if loaded is None else loaded
+
+    def __len__(self):
+        if isinstance(self.X, np.ndarray):
+            return len(self.X)
+        else:
+            # Our dataset was too large to fit in the memory
+            return len(self.paths)
+    def __getitem__(self, key):
+        if isinstance(self.X, np.ndarray):
+            return self.X[key]
+        else:
+            # Our dataset was too large to fit in the memory
+            if isinstance(key, int):
+                keys = [key]
+            elif isinstance(key, list):
+                keys = key
+            elif isinstance(key, np.ndarray):
+                keys = list(key)
+            elif isinstance(key, slice):
+                start = key.start
+                stop = key.stop
+                step = key.step
+                start = start if start is not None else 0
+                if start < 0:
+                    start += len(self.paths)
+                stop = stop if stop is not None else len(self.paths) - 1
+                if stop < 0:
+                    stop += len(self.paths)
+                step = step if step is not None else 1
+                keys = range(start, stop, step)
+            else:
+                print type(key)
+                raise Exception('This type of indexing yet not supported for the dataset')
+            res = []
+            new_keys = []
+            new_points = []
+            for key in keys:
+                if key in self.dict_loaded:
+                    idx = self.dict_loaded[key]
+                    res.append(self.loaded[idx])
+                else:
+                    point = self._read_image(self.data_dir, self.paths[key])
+                    res.append(point)
+                    new_points.append(point)
+                    new_keys.append(key)
+            n = len(self.loaded)
+            cnt = 0
+            for key in new_keys:
+                self.dict_loaded[key] = n + cnt
+                cnt += 1
+            self.loaded.extend(new_points)
+            return np.array(res)
+
+    def _read_image(self, data_dir, filename):
+        width = 178
+        height = 218
+        new_width = 140
+        new_height = 140
+        im = Image.open(utils.o_gfile((data_dir, filename), 'rb'))
+        left = (width - new_width) / 2
+        top = (height - new_height) / 2
+        right = (width + new_width) / 2
+        bottom = (height + new_height)/2
+        im = im.crop((left, top, right, bottom))
+        im = im.resize((64, 64), PIL.Image.LANCZOS)
+        return np.array(im).reshape(64, 64, 3) / 255.
 
 class DataHandler(object):
     """A class storing and manipulating the dataset.
@@ -53,6 +148,8 @@ class DataHandler(object):
     a 16*16 picture of 3 channels corresponds to (16,16,3) and a 2d point
     corresponds to (2,1,1). The shape is contained in self.data_shape
     """
+
+
     def __init__(self, opts):
         self.data_shape = None
         self.num_points = None
@@ -93,7 +190,10 @@ class DataHandler(object):
 
         if opts['input_normalize_sym'] and opts['dataset'] in sym_applicable:
             # Normalize data to [-1, 1]
-            self.data = (self.data - 0.5) * 2.
+            if isinstance(self.data.X, np.ndarray):
+                self.data.X = (self.data.X - 0.5) * 2.
+            else:
+                raise Exception('Normalizing this dataset not implemented yet')
 
     def _data_dir(self, opts):
         if opts['data_dir'].startswith("/"):
@@ -129,7 +229,7 @@ class DataHandler(object):
             X[idx, :, 0, 0] = np.random.multivariate_normal(mean, cov, 1)
 
         self.data_shape = (opts['toy_dataset_dim'], 1, 1)
-        self.data = X
+        self.data = Data(X)
         self.num_points = len(X)
 
     def _load_gmm(self, opts):
@@ -168,7 +268,7 @@ class DataHandler(object):
             X[idx, :, 0, 0] = np.random.multivariate_normal(mean, cov, 1)
 
         self.data_shape = (opts['toy_dataset_dim'], 1, 1)
-        self.data = X
+        self.data = Data(X)
         self.num_points = len(X)
 
         logging.debug('Loading GMM dataset done!')
@@ -195,7 +295,7 @@ class DataHandler(object):
         np.random.seed()
 
         self.data_shape = (128, 128, 3)
-        self.data = X/255.
+        self.data = Data(X/255.)
         self.num_points = len(X)
 
         logging.debug('Loading Done.')
@@ -244,11 +344,11 @@ class DataHandler(object):
         np.random.seed()
 
         self.data_shape = (28, 28, 1)
-        self.data = X
+        self.data = Data(X)
         self.labels = y
 
-        self.data = X[:-1000]
-        self.test_data = X[-1000:]
+        self.data = Data(X[:-1000])
+        self.test_data = Data(X[-1000:])
         self.labels = y[:-1000]
         self.test_labels = y[-1000:]
         self.num_points = len(self.data)
@@ -313,7 +413,7 @@ class DataHandler(object):
                 y3[idx] = y[_id[0]] * 100 + y[_id[1]] * 10 + y[_id[2]]
             self.data_shape = (28, 28 * 3, 1)
 
-        self.data = X3/255.
+        self.data = Data(X3/255.)
         y3 = y3.astype(int)
         self.labels = y3
         self.num_points = num
@@ -359,8 +459,8 @@ class DataHandler(object):
 
         self.data_shape = (32, 32, 3)
 
-        self.data = X[:-1000]
-        self.test_data = X[-1000:]
+        self.data = Data(X[:-1000])
+        self.test_data = Data(X[-1000:])
         self.labels = y[:-1000]
         self.test_labels = y[-1000:]
         self.num_points = len(self.data)
@@ -369,41 +469,23 @@ class DataHandler(object):
 
     def _load_celebA(self, opts):
         """Load CelebA
-
         """
         logging.debug('Loading CelebA dataset')
 
         num_samples = 202599
-        data_dir = self._data_dir(opts)
-        pics = []
-        width = 178
-        height = 218
-        new_width = 64
-        new_height = 64
-        for i in range(1, num_samples + 1):
-            if i % 1000 == 0:
-                print '%d / %d' % (i, num_samples)
-            fname = '%.6d.jpg' % i
-            im = Image.open(utils.o_gfile((data_dir, fname), 'rb'))
-            left = (width - new_width) / 2
-            top = (height - new_height) / 2
-            right = (width + new_width) / 2
-            bottom = (height + new_height)/2
-            im = im.crop((left, top, right, bottom))
-            pics.append(np.array(im).reshape(new_width, new_height, 3))
 
-        X = np.array(pics)
-
+        paths = ['%.6d.jpg' % i for i in range(1, num_samples + 1)]
         seed = 123
-        np.random.seed(seed)
-        np.random.shuffle(X)
-        np.random.seed()
+        random.seed(seed)
+        random.shuffle(paths)
+        random.seed()
 
-        self.data_shape = (new_width, new_height, 3)
-        self.data = X/255.
-
-        self.data = X[:-10000]
-        self.test_data = X[-10000:]
-        self.num_points = len(self.data)
+        self.data_shape = (64, 64, 3)
+        self.data = Data(None, self._data_dir(opts), paths[:-10000])
+        self.test_data = Data(None, self._data_dir(opts), paths[-10000:])
+        self.num_points = num_samples - 10000
+        self.labels = np.array(self.num_points * [0])
+        self.test_labels = np.array(10000 * [0])
 
         logging.debug('Loading Done.')
+
