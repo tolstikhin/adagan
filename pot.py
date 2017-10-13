@@ -1348,6 +1348,22 @@ class ImagePot(Pot):
         else:
             assert opts['adv_c_loss'] == 'none'
 
+        # Add ops to pretrain the Qz match mean and covariance of Pz
+        loss_pretrain = None
+        if opts['e_pretrain']:
+            # Next two vectors are zdim-dimensional
+            mean_pz = tf.reduce_mean(noise_ph, axis=0, keep_dims=True)
+            mean_qz = tf.reduce_mean(encoded_training, axis=0, keep_dims=True)
+            mean_loss = tf.reduce_mean(tf.square(mean_pz - mean_qz))
+            cov_pz = tf.matmul(noise_ph - mean_pz,
+                               noise_ph - mean_pz, transpose_a=True)
+            cov_pz /= opts['e_pretrain_bsize'] - 1.
+            cov_qz = tf.matmul(encoded_training - mean_qz,
+                               encoded_training - mean_qz, transpose_a=True)
+            cov_qz /= opts['e_pretrain_bsize'] - 1.
+            cov_loss = tf.reduce_mean(tf.square(cov_pz - cov_qz))
+            loss_pretrain = mean_loss + cov_loss
+
         # Also add ops to find the least Gaussian 2d projection 
         # this is handy when visually inspection Qz = Pz
         self.add_least_gaussian2d_ops(opts)
@@ -1358,6 +1374,7 @@ class ImagePot(Pot):
         d_vars = [var for var in t_vars if 'DISCRIMINATOR/' in var.name]
         # Updates for encoder and generator
         eg_vars = [var for var in t_vars if 'DISCRIMINATOR/' not in var.name]
+        e_vars = [var for var in t_vars if 'ENCODER/' in var.name]
         logging.error('Param num in G and E: %d' % \
                 np.sum([np.prod([int(d) for d in v.get_shape()]) for v in eg_vars]))
 
@@ -1366,6 +1383,10 @@ class ImagePot(Pot):
         else:
             d_optim = None
         optim = ops.optimizer(opts, net='g', decay=lr_decay_ph).minimize(loss=loss, var_list=eg_vars)
+        pretrain_optim = None
+        if opts['e_pretrain']:
+            pretrain_optim = ops.optimizer(opts, net='g').minimize(loss=loss_pretrain, var_list=e_vars)
+
 
         generated_images = self.generator(
             opts, noise_ph, is_training=is_training_ph,
@@ -1380,11 +1401,13 @@ class ImagePot(Pot):
         self._keep_prob_ph = keep_prob_ph
         self._optim = optim
         self._d_optim = d_optim
+        self._pretrain_optim = pretrain_optim
         self._loss = loss
         self._loss_reconstruct = loss_reconstr
         self._loss_match = loss_match
         self._loss_z_corr = loss_z_corr
         self._loss_z_lks = loss_z_lks
+        self._loss_pretrain = loss_pretrain
         self._additional_losses = additional_losses
         self._g_mom_stats = g_mom_stats
         self._d_loss = d_loss
@@ -1408,6 +1431,31 @@ class ImagePot(Pot):
 
         logging.error("Building Graph Done.")
 
+    def pretrain(self, opts):
+        steps_max = 50
+        batch_size = opts['e_pretrain_bsize']
+        for steps in xrange(steps_max):
+            train_size = self._data.num_points
+            data_ids = np.random.choice(train_size, min(train_size, batch_size),
+                                        replace=False)
+            batch_images = self._data.data[data_ids].astype(np.float)
+            batch_noise = opts['pot_pz_std'] *\
+                utils.generate_noise(opts, batch_size)
+            # Noise for the random encoder (if present)
+            batch_enc_noise = utils.generate_noise(opts, batch_size)
+
+            # Update encoder
+            [_, loss_pretrain] = self._session.run(
+                [self._pretrain_optim,
+                 self._loss_pretrain],
+                feed_dict={self._real_points_ph: batch_images,
+                           self._noise_ph: batch_noise,
+                           self._enc_noise_ph: batch_enc_noise,
+                           self._is_training_ph: True,
+                           self._keep_prob_ph: opts['dropout_keep_prob']})
+
+            if loss_pretrain < 0.1:
+                break
 
     def _train_internal(self, opts):
         """Train a POT model.
@@ -1428,6 +1476,12 @@ class ImagePot(Pot):
         counter = 0
         decay = 1.
         logging.error('Training POT')
+
+        # Optionally we first pretrain the Qz to match mean and
+        # covariance of Pz
+        if opts['e_pretrain']:
+            logging.error('Pretraining the encoder')
+            self.pretrain(opts)
 
         for _epoch in xrange(opts["gan_epoch_num"]):
 
