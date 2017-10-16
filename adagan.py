@@ -41,11 +41,13 @@ class AdaGan(object):
         self._saver = ArraySaver('disk', workdir=opts['work_dir'])
         # Which GAN architecture should we use?
         pic_datasets = ['mnist',
+                        'zalando',
                         'mnist3',
                         'guitars',
                         'cifar10',
                         'celebA']
         supervised_pic_datasets = ['mnist',
+                                   'zalando',
                                    'mnist3',
                                    'cifar10']
         gan_class = None
