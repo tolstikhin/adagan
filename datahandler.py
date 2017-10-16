@@ -165,6 +165,8 @@ class DataHandler(object):
         """
         if opts['dataset'] == 'mnist':
             self._load_mnist(opts)
+        elif opts['dataset'] == 'zalando':
+            self._load_mnist(opts, zalando=True)
         elif opts['dataset'] == 'mnist3':
             self._load_mnist3(opts)
         elif opts['dataset'] == 'gmm':
@@ -300,11 +302,14 @@ class DataHandler(object):
 
         logging.debug('Loading Done.')
 
-    def _load_mnist(self, opts):
-        """Load data from MNIST files.
+    def _load_mnist(self, opts, zalando=False):
+        """Load data from MNIST or ZALANDO files.
 
         """
-        logging.debug('Loading MNIST')
+        if not zalando:
+            logging.debug('Loading MNIST')
+        else:
+            logging.debug('Loading ZALANDO')
         data_dir = self._data_dir(opts)
         # pylint: disable=invalid-name
         # Let us use all the bad variable names!
