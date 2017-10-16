@@ -44,7 +44,7 @@ class Metrics(object):
         """
 
         pic_datasets = ['mnist',
-                        'zolando',
+                        'zalando',
                         'mnist3',
                         'guitars',
                         'cifar10',
@@ -477,7 +477,7 @@ class Metrics(object):
     def _make_plots_pics(self, opts, step, real_points,
                          fake_points, weights=None, prefix='', max_rows=16):
         pics = []
-        if opts['dataset'] in ('mnist', 'zolando', 'mnist3', 'guitars', 'cifar10', 'celebA'):
+        if opts['dataset'] in ('mnist', 'zalando', 'mnist3', 'guitars', 'cifar10', 'celebA'):
             if opts['input_normalize_sym']:
                 if fake_points is not None:
                     fake_points = fake_points / 2. + 0.5
@@ -502,7 +502,7 @@ class Metrics(object):
                     pics.append(1. - np.concatenate(
                         [dig1, dig2, dig3], axis=1))
             else:
-                if opts['dataset'] in ['mnist', 'zolando']:
+                if opts['dataset'] in ['mnist', 'zalando']:
                     pics.append(1. - fake_points[idx, :, :, :])
                 else:
                     pics.append(fake_points[idx, :, :, :])
