@@ -468,6 +468,21 @@ class ImagePot(Pot):
                     - 0.5 * opts['latent_space_dim'] * np.log(sigma2_p)
         return hi
 
+    def pz_sampler(self, opts, input_, prefix='PZ_SAMPLER', reuse=False):
+        """Transformation to be applied to the sample from Pz
+        We are trying to match Qz to phi(Pz), where phi is defined by
+        this function
+        """
+        dim = opts['latent_space_dim']
+        with tf.variable_scope(prefix, reuse=reuse):
+            matrix = tf.get_variable(
+                "W", [dim, dim], tf.float32,
+                tf.constant_initializer(np.identity(dim)))
+            bias = tf.get_variable(
+                "b", [dim],
+                initializer=tf.constant_initializer(0.))
+        return tf.matmul(input_, matrix) + bias
+
     def get_batch_size(self, opts, input_):
         return tf.cast(tf.shape(input_)[0], tf.float32)# opts['batch_size']
 
@@ -1223,6 +1238,11 @@ class ImagePot(Pot):
         keep_prob_ph = tf.placeholder(tf.float32, name='keep_prob_ph')
 
         # Operations
+        if opts['pz_transform']:
+            noise = self.pz_sampler(opts, noise_ph)
+        else:
+            noise = noise_ph
+
         real_points = self._data_augmentation(
             opts, real_points_ph, is_training_ph)
 
@@ -1281,7 +1301,7 @@ class ImagePot(Pot):
         loss_z_lks = self.discriminator_lks_test(opts, encoded_training)
         if opts['z_test'] == 'gan':
             # Pz = Qz test based on GAN in the Z space
-            d_logits_Pz = self.discriminator(opts, noise_ph)
+            d_logits_Pz = self.discriminator(opts, noise)
             d_logits_Qz = self.discriminator(opts, encoded_training, reuse=True)
             d_loss_Pz = tf.reduce_mean(
                 tf.nn.sigmoid_cross_entropy_with_logits(
@@ -1290,7 +1310,7 @@ class ImagePot(Pot):
                 tf.nn.sigmoid_cross_entropy_with_logits(
                     logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
             d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
-            loss_match = -d_loss_Qz
+            loss_match = -d_loss_Qz - d_loss_Pz
         elif opts['z_test'] == 'lks':
             # Pz = Qz test without adversarial training
             # based on Kernel Stein Discrepancy
@@ -1352,11 +1372,11 @@ class ImagePot(Pot):
         loss_pretrain = None
         if opts['e_pretrain']:
             # Next two vectors are zdim-dimensional
-            mean_pz = tf.reduce_mean(noise_ph, axis=0, keep_dims=True)
+            mean_pz = tf.reduce_mean(noise, axis=0, keep_dims=True)
             mean_qz = tf.reduce_mean(encoded_training, axis=0, keep_dims=True)
             mean_loss = tf.reduce_mean(tf.square(mean_pz - mean_qz))
-            cov_pz = tf.matmul(noise_ph - mean_pz,
-                               noise_ph - mean_pz, transpose_a=True)
+            cov_pz = tf.matmul(noise - mean_pz,
+                               noise - mean_pz, transpose_a=True)
             cov_pz /= opts['e_pretrain_bsize'] - 1.
             cov_qz = tf.matmul(encoded_training - mean_qz,
                                encoded_training - mean_qz, transpose_a=True)
@@ -1372,9 +1392,11 @@ class ImagePot(Pot):
         t_vars = tf.trainable_variables()
         # Updates for discriminator
         d_vars = [var for var in t_vars if 'DISCRIMINATOR/' in var.name]
-        # Updates for encoder and generator
+        # Updates for encoder, decoder and possibly pz-transform
         eg_vars = [var for var in t_vars if 'DISCRIMINATOR/' not in var.name]
+        # Encoder variables separately if we want to pretrain
         e_vars = [var for var in t_vars if 'ENCODER/' in var.name]
+
         logging.error('Param num in G and E: %d' % \
                 np.sum([np.prod([int(d) for d in v.get_shape()]) for v in eg_vars]))
 
@@ -1389,12 +1411,13 @@ class ImagePot(Pot):
 
 
         generated_images = self.generator(
-            opts, noise_ph, is_training=is_training_ph,
+            opts, noise, is_training=is_training_ph,
             reuse=True, keep_prob=keep_prob_ph)
 
         self._real_points_ph = real_points_ph
         self._real_points = real_points
         self._noise_ph = noise_ph
+        self._noise = noise
         self._enc_noise_ph = enc_noise_ph
         self._lr_decay_ph = lr_decay_ph
         self._is_training_ph = is_training_ph
@@ -1418,6 +1441,8 @@ class ImagePot(Pot):
         saver = tf.train.Saver(max_to_keep=10)
         tf.add_to_collection('real_points_ph', self._real_points_ph)
         tf.add_to_collection('noise_ph', self._noise_ph)
+        if opts['pz_transform']:
+            tf.add_to_collection('noise', self._noise)
         tf.add_to_collection('is_training_ph', self._is_training_ph)
         tf.add_to_collection('keep_prob_ph', self._is_training_ph)
         tf.add_to_collection('encoder', self._Qz)
@@ -1432,7 +1457,7 @@ class ImagePot(Pot):
         logging.error("Building Graph Done.")
 
     def pretrain(self, opts):
-        steps_max = 50
+        steps_max = 200
         batch_size = opts['e_pretrain_bsize']
         for step in xrange(steps_max):
             train_size = self._data.num_points
@@ -1575,7 +1600,7 @@ class ImagePot(Pot):
                 now = time.time()
 
                 rec_test = None
-                if opts['verbose'] and counter % 500 == 0:
+                if opts['verbose'] and counter % 200 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data[:]
                     [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, loss_z_lks, additional_losses] = self._session.run(
@@ -1619,13 +1644,13 @@ class ImagePot(Pot):
                     # Plotting intermediate results
                     metrics = Metrics()
                     # --Random samples from the model
-                    points_to_plot = self._session.run(
-                        self._generated,
+                    points_to_plot, sample_pz = self._session.run(
+                        [self._generated, self._noise],
                         feed_dict={
                             self._noise_ph: self._noise_for_plots[0:num_plot],
                             self._is_training_ph: False,
                             self._keep_prob_ph: 1e5})
-                    Qz_num = 1000
+                    Qz_num = 320
                     sample_Qz = self._session.run(
                         self._Qz,
                         feed_dict={
@@ -1637,7 +1662,8 @@ class ImagePot(Pot):
                     proj_mat, check = self.least_gaussian_2d(opts, sample_Qz)
                     # Projecting samples from Qz and Pz on this 2d plain
                     metrics.Qz = np.dot(sample_Qz, proj_mat)
-                    metrics.Pz = np.dot(self._noise_for_plots, proj_mat)
+                    # metrics.Pz = np.dot(self._noise_for_plots, proj_mat)
+                    metrics.Pz = np.dot(sample_pz, proj_mat)
                     metrics.Qz_labels = self._data.labels[:Qz_num]
                     metrics.l2s = losses[:]
                     metrics.losses_match = [opts['pot_lambda'] * el for el in losses_match]

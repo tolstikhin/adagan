@@ -561,7 +561,7 @@ class Metrics(object):
                 plt.subplot(gs[1])
             else:
                 plt.subplot(gs[1,0])
-            x = np.arange(1, len(self.l2s) + 1) * opts['plot_every']
+            x = np.arange(1, len(self.l2s) + 1)
             y = np.array([el if abs(el) < 1e2 else 1e2 for el in self.l2s])
             plt.plot(x, y, color='red', label='loss')
             y = np.array([el if abs(el) < 1e2 else 1e2 for el in self.losses_match])
@@ -575,7 +575,7 @@ class Metrics(object):
                 # plt.scatter(self.Qz[:,0], self.Qz[:,1], s=20,
                 #             edgecolors='face', c=self.Qz_labels)
                 plt.scatter(self.Pz[:,0], self.Pz[:,1], color='red', s=200, marker='*', label='Pz')
-                plt.scatter(self.Qz[:,0], self.Qz[:,1], s=20, marker='x',
+                plt.scatter(self.Qz[:,0], self.Qz[:,1], s=40, marker='x',
                             edgecolors='face', c=self.Qz_labels, label='Qz')
                 xmin = np.min(self.Qz[:,0])
                 xmax = np.max(self.Qz[:,0])
