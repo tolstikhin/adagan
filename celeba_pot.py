@@ -49,8 +49,8 @@ def main():
     opts["verbose"] = 2
     opts['tf_run_batch_size'] = 128
     opts["early_stop"] = -1 # set -1 to run normally
-    opts["plot_every"] = 100
-    opts["save_every_epoch"] = 10
+    opts["plot_every"] = 500
+    opts["save_every_epoch"] = 20
     opts['gmm_max_val'] = 15.
 
     # Datasets
@@ -85,19 +85,19 @@ def main():
     opts['convolutions'] = False # If False then encoder is MLP of 3 layers
     opts['d_num_filters'] = 512
     opts['d_num_layers'] = 4
-    opts['g_num_filters'] = 1024
-    opts['g_num_layers'] = 3
+    opts['g_num_filters'] = 512
+    opts['g_num_layers'] = 4
     opts['e_is_random'] = False
     opts['e_pretrain'] = True
-    opts['e_pretrain_bsize'] = 1000
-    opts['e_num_filters'] = 1024
+    opts['e_pretrain_bsize'] = 256
+    opts['e_num_filters'] = 512
     opts['e_num_layers'] = 4
     opts['g_arch'] = 'mlp'
     opts['g_stride1_deconv'] = False
     opts['g_3x3_conv'] = 0
     opts['e_arch'] = 'dcgan'
     opts['e_3x3_conv'] = 0
-    opts['conv_filters_dim'] = 4
+    opts['conv_filters_dim'] = 5
     # --GAN specific:
     opts['conditional'] = False
     opts['unrolled'] = FLAGS.unrolled # Use Unrolled GAN? (only for images)

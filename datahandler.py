@@ -70,7 +70,7 @@ class Data(object):
             assert isinstance(data_dir, str), 'Data directory not provided'
             assert paths is not None and len(paths) > 0, 'No paths provided for the data'
             self.data_dir = data_dir
-            self.paths = paths
+            self.paths = paths[:]
             self.dict_loaded = {} if dict_loaded is None else dict_loaded
             self.loaded = [] if loaded is None else loaded
 

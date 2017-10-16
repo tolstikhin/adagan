@@ -1415,7 +1415,7 @@ class ImagePot(Pot):
         self._Qz = encoded_training
         self._reconstruct_x = reconstructed_training
 
-        saver = tf.train.Saver()
+        saver = tf.train.Saver(max_to_keep=10)
         tf.add_to_collection('real_points_ph', self._real_points_ph)
         tf.add_to_collection('noise_ph', self._noise_ph)
         tf.add_to_collection('is_training_ph', self._is_training_ph)
@@ -1455,7 +1455,7 @@ class ImagePot(Pot):
                            self._keep_prob_ph: opts['dropout_keep_prob']})
 
             if opts['verbose'] == 2:
-                print 'Step %d/%d, loss=%f' % (step, steps_max, loss_pretrain)
+                logging.error('Step %d/%d, loss=%f' % (step, steps_max, loss_pretrain))
 
             if loss_pretrain < 0.1:
                 break
@@ -1548,8 +1548,8 @@ class ImagePot(Pot):
                 losses_rec.append(loss_rec)
                 losses_match.append(loss_match)
                 if opts['verbose'] >= 2:
-                    print 'loss after %d steps : %f' % (counter, losses[-1])
-                    print 'loss match  after %d steps : %f' % (counter, losses_match[-1])
+                    # logging.error('loss after %d steps : %f' % (counter, losses[-1]))
+                    logging.error('loss match  after %d steps : %f' % (counter, losses_match[-1]))
 
                 # Update discriminator in Z space (if any).
                 if self._d_optim is not None:
@@ -1575,7 +1575,7 @@ class ImagePot(Pot):
                 now = time.time()
 
                 rec_test = None
-                if opts['verbose'] and counter % 100 == 0:
+                if opts['verbose'] and counter % 500 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data[:]
                     [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, loss_z_lks, additional_losses] = self._session.run(
