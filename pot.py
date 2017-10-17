@@ -1239,6 +1239,7 @@ class ImagePot(Pot):
 
         # Operations
         if opts['pz_transform']:
+            assert opts['z_test'] == 'gan', 'Pz transforms are currently allowed only for POT+GAN'
             noise = self.pz_sampler(opts, noise_ph)
         else:
             noise = noise_ph
@@ -1316,7 +1317,9 @@ class ImagePot(Pot):
             # based on Kernel Stein Discrepancy
             # Uncomment next line to check for the real Pz
             # loss_match = self.discriminator_test(opts, noise_ph)
-            loss_match = self.discriminator_test(opts, encoded_training)
+            lks = self.discriminator_test(opts, encoded_training)
+            lks = tf.Print(lks, [lks], 'LKS:')
+            loss_match = lks * lks
             d_loss = None
             d_logits_Pz = None
             d_logits_Qz = None
@@ -1600,7 +1603,7 @@ class ImagePot(Pot):
                 now = time.time()
 
                 rec_test = None
-                if opts['verbose'] and counter % 200 == 0:
+                if opts['verbose'] and counter % 500 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data[:]
                     [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, loss_z_lks, additional_losses] = self._session.run(
