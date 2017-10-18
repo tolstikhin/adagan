@@ -624,11 +624,19 @@ class ImagePot(Pot):
         s2 = input_[half_size:, :]
         dotprods = tf.reduce_sum(tf.multiply(s1, s2), axis=1)
         distances = tf.reduce_sum(tf.square(s1 - s2), axis=1)
-        # Median heuristic for the sigma^2 of Gaussian kernel
-        # sigma2_k = tf.nn.top_k(distances, half_size / 2).values[half_size / 2 - 1]
-        sigma2_k = opts['latent_space_dim']
-        # sigma2_k = tf.Print(sigma2_k, [sigma2_k], 'Kernel width:')
         sigma2_p = opts['pot_pz_std'] ** 2 # var = std ** 2
+        # Median heuristic for the sigma^2 of Gaussian kernel
+        # sigma2_k = tf.nn.top_k(distances, half_size).values[half_size - 1]
+        # Maximum heuristic for the sigma^2 of Gaussian kernel
+        # sigma2_k = tf.nn.top_k(distances, 1).values[0]
+        sigma2_k = opts['latent_space_dim'] * sigma2_p
+        if opts['verbose'] == 2:
+            sigma2_k = tf.Print(sigma2_k, [tf.nn.top_k(distances, 1).values[0]],
+                                'Maximal squared pairwise distance:')
+            sigma2_k = tf.Print(sigma2_k, [tf.reduce_mean(distances)],
+                                'Average squared pairwise distance:')
+            sigma2_k = tf.Print(sigma2_k, [sigma2_k], 'Kernel width:')
+        # sigma2_k = tf.Print(sigma2_k, [sigma2_k], 'Kernel width:')
         res = dotprods / sigma2_p ** 2 \
               - distances * (1. / sigma2_p / sigma2_k + 1. / sigma2_k ** 2) \
               + opts['latent_space_dim'] / sigma2_k
@@ -654,21 +662,30 @@ class ImagePot(Pot):
         """
         n = self.get_batch_size(opts, input_)
         n = tf.cast(n, tf.int32)
+        half_size = (n * n - n) / 2
         nf = tf.cast(n, tf.float32)
         norms = tf.reduce_sum(tf.square(input_), axis=1, keep_dims=True)
         dotprods = tf.matmul(input_, input_, transpose_b=True)
         distances = norms + tf.transpose(norms) - 2. * dotprods
-        # Median heuristic for the sigma^2 of Gaussian kernel
-        # sigma2_k = tf.nn.top_k(distances, half_size / 2).values[half_size / 2 - 1]
-        sigma2_k = opts['latent_space_dim']
-        # sigma2_k = tf.Print(sigma2_k, [sigma2_k], 'Kernel width:')
         sigma2_p = opts['pot_pz_std'] ** 2 # var = std ** 2
+        # Median heuristic for the sigma^2 of Gaussian kernel
+        # sigma2_k = tf.nn.top_k(tf.reshape(distances, [half_size]), half_size).values[half_size - 1]
+        # Maximal heuristic for the sigma^2 of Gaussian kernel
+        # sigma2_k = tf.nn.top_k(tf.reshape(distances, [-1]), 1).values[0]
+        sigma2_k = opts['latent_space_dim'] * sigma2_p
+        if opts['verbose'] == 2:
+            sigma2_k = tf.Print(sigma2_k, [tf.nn.top_k(tf.reshape(distances, [-1]), 1).values[0]],
+                                'Maximal squared pairwise distance:')
+            sigma2_k = tf.Print(sigma2_k, [tf.reduce_mean(distances)],
+                                'Average squared pairwise distance:')
+            sigma2_k = tf.Print(sigma2_k, [sigma2_k], 'Kernel width:')
         res = dotprods / sigma2_p ** 2 \
               - distances * (1. / sigma2_p / sigma2_k + 1. / sigma2_k ** 2) \
               + opts['latent_space_dim'] / sigma2_k
         res = tf.multiply(res, tf.exp(- distances / 2./ sigma2_k))
         res = tf.multiply(res, 1. - tf.eye(n))
         stat = tf.reduce_sum(res) / (nf * nf - nf)
+        # stat = tf.reduce_sum(res) / (nf * nf)
         return stat
 
     def correlation_loss(self, opts, input_):
@@ -702,7 +719,12 @@ class ImagePot(Pot):
 
 
     def encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
-
+        def add_noise(x):
+            shape = tf.shape(x)
+            return x + tf.truncated_normal(shape, 0.0, 0.1)
+        def do_nothing(x):
+            return x
+        input_ = tf.cond(is_training, lambda: add_noise(input_), lambda: do_nothing(input_))
         num_units = opts['e_num_filters']
         num_layers = opts['e_num_layers']
         with tf.variable_scope("ENCODER", reuse=reuse):
@@ -1319,7 +1341,8 @@ class ImagePot(Pot):
             # loss_match = self.discriminator_test(opts, noise_ph)
             lks = self.discriminator_test(opts, encoded_training)
             lks = tf.Print(lks, [lks], 'LKS:')
-            loss_match = lks * lks
+            # loss_match = lks * lks
+            loss_match = lks
             d_loss = None
             d_logits_Pz = None
             d_logits_Qz = None
