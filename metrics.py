@@ -579,14 +579,15 @@ class Metrics(object):
                             edgecolors='face', c=self.Qz_labels, label='Qz')
                 xmin = np.min(self.Qz[:,0])
                 xmax = np.max(self.Qz[:,0])
+                magnify = 0.3
                 width = abs(xmax - xmin)
-                xmin = xmin - width * 0.1
-                xmax = xmax + width * 0.1
+                xmin = xmin - width * magnify
+                xmax = xmax + width * magnify
                 ymin = np.min(self.Qz[:,1])
                 ymax = np.max(self.Qz[:,1])
                 width = abs(ymin - ymax)
-                ymin = ymin - width * 0.1
-                ymax = ymax + width * 0.1
+                ymin = ymin - width * magnify
+                ymax = ymax + width * magnify
                 plt.xlim(xmin, xmax)
                 plt.ylim(ymin, ymax)
                 plt.legend(loc='upper left')
