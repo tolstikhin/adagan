@@ -120,6 +120,7 @@ def main():
     opts['reconstr_w'] = 1.0
     opts['z_test'] = 'gan'
     opts['gan_p_trick'] = False
+    opts['pz_transform'] = False
     opts['z_test_corr_w'] = 1.0
     opts['z_test_proj_dim'] = 10
 
