@@ -669,7 +669,7 @@ class ImagePot(Pot):
         distances = norms + tf.transpose(norms) - 2. * dotprods
         sigma2_p = opts['pot_pz_std'] ** 2 # var = std ** 2
         # Median heuristic for the sigma^2 of Gaussian kernel
-        # sigma2_k = tf.nn.top_k(tf.reshape(distances, [half_size]), half_size).values[half_size - 1]
+        # sigma2_k = tf.nn.top_k(tf.reshape(distances, [-1]), half_size).values[half_size - 1]
         # Maximal heuristic for the sigma^2 of Gaussian kernel
         # sigma2_k = tf.nn.top_k(tf.reshape(distances, [-1]), 1).values[0]
         sigma2_k = opts['latent_space_dim'] * sigma2_p
@@ -686,6 +686,84 @@ class ImagePot(Pot):
         res = tf.multiply(res, 1. - tf.eye(n))
         stat = tf.reduce_sum(res) / (nf * nf - nf)
         # stat = tf.reduce_sum(res) / (nf * nf)
+        return stat
+
+    def discriminator_mmd_test(self, opts, sample_qz, sample_pz):
+        """U statistic for MMD(Qz, Pz) with the RBF kernel
+
+        """
+        sigma2_p = opts['pot_pz_std'] ** 2 # var = std ** 2
+        kernel = 'IM'
+        n = self.get_batch_size(opts, sample_qz)
+        n = tf.cast(n, tf.int32)
+        nf = tf.cast(n, tf.float32)
+        half_size = (n * n - n) / 2
+        # Pz
+        norms_pz = tf.reduce_sum(tf.square(sample_pz), axis=1, keep_dims=True)
+        dotprods_pz = tf.matmul(sample_pz, sample_pz, transpose_b=True)
+        distances_pz = norms_pz + tf.transpose(norms_pz) - 2. * dotprods_pz
+        # Qz
+        norms_qz = tf.reduce_sum(tf.square(sample_qz), axis=1, keep_dims=True)
+        dotprods_qz = tf.matmul(sample_qz, sample_qz, transpose_b=True)
+        distances_qz = norms_qz + tf.transpose(norms_qz) - 2. * dotprods_qz
+        # Pz vs Qz
+        dotprods = tf.matmul(sample_qz, sample_pz, transpose_b=True)
+        distances = norms_qz + tf.transpose(norms_pz) - 2. * dotprods
+
+
+        if opts['verbose'] == 2:
+            distances = tf.Print(distances, [tf.nn.top_k(tf.reshape(distances_qz, [-1]), 1).values[0]],
+                                'Maximal Qz squared pairwise distance:')
+            distances = tf.Print(distances, [tf.reduce_mean(distances_qz)],
+                                'Average Qz squared pairwise distance:')
+
+            distances = tf.Print(distances, [tf.nn.top_k(tf.reshape(distances_pz, [-1]), 1).values[0]],
+                                'Maximal Pz squared pairwise distance:')
+            distances = tf.Print(distances, [tf.reduce_mean(distances_pz)],
+                                'Average Pz squared pairwise distance:')
+
+            distances = tf.Print(distances, [tf.nn.top_k(tf.reshape(distances, [-1]), 1).values[0]],
+                                'Maximal squared pairwise distance:')
+            distances = tf.Print(distances, [tf.nn.top_k(tf.reshape(distances, [-1]), n * n).values[n * n - 1]],
+                                'Minimal squared pairwise distance:')
+            distances = tf.Print(distances, [tf.reduce_mean(distances)],
+                                'Average squared pairwise distance:')
+
+        if kernel == 'RBF':
+            # RBF kernel
+
+            # Median heuristic for the sigma^2 of Gaussian kernel
+            sigma2_k = tf.nn.top_k(tf.reshape(distances, [-1]), half_size).values[half_size - 1]
+            sigma2_k += tf.nn.top_k(tf.reshape(distances_qz, [-1]), half_size).values[half_size - 1]
+            # Maximal heuristic for the sigma^2 of Gaussian kernel
+            # sigma2_k = tf.nn.top_k(tf.reshape(distances_qz, [-1]), 1).values[0]
+            # sigma2_k += tf.nn.top_k(tf.reshape(distances, [-1]), 1).values[0]
+            # sigma2_k = opts['latent_space_dim'] * sigma2_p
+            sigma2_k = tf.Print(sigma2_k, [sigma2_k], 'Kernel width:')
+            res1 = tf.exp( - distances_qz / 2. / sigma2_k)
+            res1 += tf.exp( - distances_pz / 2. / sigma2_k)
+            res1 = tf.multiply(res1, 1. - tf.eye(n))
+            res1 = tf.reduce_sum(res1) / (nf * nf - nf)
+            res1 = tf.Print(res1, [res1], 'First two terms:')
+            res2 = tf.exp( - distances / 2. / sigma2_k)
+            res2 = tf.reduce_sum(res2) * 2. / (nf * nf)
+            res2 = tf.Print(res2, [res2], 'Negative term:')
+            stat = res1 - res2
+            # stat = tf.reduce_sum(res) / (nf * nf)
+        elif kernel == 'IM':
+            # C = tf.nn.top_k(tf.reshape(distances, [-1]), half_size).values[half_size - 1]
+            # C += tf.nn.top_k(tf.reshape(distances_qz, [-1]), half_size).values[half_size - 1]
+            C = 1.
+            res1 = C / (C + distances_qz)
+            res1 += C / (C + distances_pz)
+            res1 = tf.multiply(res1, 1. - tf.eye(n))
+            res1 = tf.reduce_sum(res1) / (nf * nf - nf)
+            res1 = tf.Print(res1, [res1], 'First two terms:')
+            res2 = C / (C + distances)
+            res2 = tf.reduce_sum(res2) * 2. / (nf * nf)
+            res2 = tf.Print(res2, [res2], 'Negative term:')
+            stat = res1 - res2
+            # stat = tf.reduce_sum(res) / (nf * nf)
         return stat
 
     def correlation_loss(self, opts, input_):
@@ -721,7 +799,7 @@ class ImagePot(Pot):
     def encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
         def add_noise(x):
             shape = tf.shape(x)
-            return x + tf.truncated_normal(shape, 0.0, 0.1)
+            return x + tf.truncated_normal(shape, 0.0, 0.01)
         def do_nothing(x):
             return x
         input_ = tf.cond(is_training, lambda: add_noise(input_), lambda: do_nothing(input_))
@@ -1334,15 +1412,18 @@ class ImagePot(Pot):
                     logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
             d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
             loss_match = -d_loss_Qz - d_loss_Pz
+        elif opts['z_test'] == 'mmd':
+            # Pz = Qz test based on MMD(Pz, Qz)
+            loss_match = self.discriminator_mmd_test(opts, encoded_training, noise)
+            d_loss = None
+            d_logits_Pz = None
+            d_logits_Qz = None
         elif opts['z_test'] == 'lks':
             # Pz = Qz test without adversarial training
             # based on Kernel Stein Discrepancy
             # Uncomment next line to check for the real Pz
             # loss_match = self.discriminator_test(opts, noise_ph)
-            lks = self.discriminator_test(opts, encoded_training)
-            lks = tf.Print(lks, [lks], 'LKS:')
-            # loss_match = lks * lks
-            loss_match = lks
+            loss_match = self.discriminator_test(opts, encoded_training)
             d_loss = None
             d_logits_Pz = None
             d_logits_Qz = None
@@ -1581,6 +1662,22 @@ class ImagePot(Pot):
                                self._lr_decay_ph: decay,
                                self._is_training_ph: True,
                                self._keep_prob_ph: opts['dropout_keep_prob']})
+
+                # ======= for tracking the loss_match on newly sampled mini-batch
+                # new_data_ids = np.random.choice(train_size, opts['batch_size'],
+                #                             replace=False, p=self._data_weights)
+                # new_batch_noise = opts['pot_pz_std'] *\
+                #     utils.generate_noise(opts, opts['batch_size'])
+                # new_batch_images = self._data.data[data_ids].astype(np.float)
+                # [new_loss_match] = self._session.run([self._loss_match],
+                #     feed_dict={self._real_points_ph: new_batch_images,
+                #                self._noise_ph: new_batch_noise,
+                #                self._enc_noise_ph: batch_enc_noise,
+                #                self._lr_decay_ph: decay,
+                #                self._is_training_ph: True,
+                #                self._keep_prob_ph: opts['dropout_keep_prob']})
+                # print 'Loss match on a new mini-batch: ', new_loss_match
+                # ======
 
                 if opts['decay_schedule'] == "plateau":
                     # First 30 epochs do nothing
