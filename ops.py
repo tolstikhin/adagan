@@ -23,6 +23,24 @@ def batch_norm(opts, _input, is_train, reuse, scope, scale=True):
         is_training=is_train, reuse=reuse, updates_collections=None,
         scope=scope, fused=False)
 
+def upsample_nn(input_, new_size, scope=None, reuse=None):
+    """NN up-sampling
+    """
+
+    with tf.variable_scope(scope or "upsample_nn", reuse=reuse):
+        result = tf.image.resize_nearest_neighbor(input_, new_size)
+
+    return result
+
+def downsample(input_, d_h=2, d_w=2, conv_filters_dim=None, scope=None, reuse=None):
+    """NN up-sampling
+    """
+
+    with tf.variable_scope(scope or "downsample", reuse=reuse):
+        result = tf.nn.max_pool(input_, ksize=[1, d_h, d_w, 1], strides=[1, d_h, d_w, 1], padding='SAME')
+
+    return result
+
 def linear(opts, input_, output_dim, scope=None, init='normal', reuse=None):
     """Fully connected linear layer.
 
@@ -62,6 +80,7 @@ def linear(opts, input_, output_dim, scope=None, init='normal', reuse=None):
 
 
     return tf.matmul(input_, matrix) + bias
+
 
 def conv2d(opts, input_, output_dim, d_h=2, d_w=2, scope=None,
            conv_filters_dim=None, padding='SAME', l2_norm=False):

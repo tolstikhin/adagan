@@ -561,12 +561,13 @@ class Metrics(object):
                 plt.subplot(gs[1])
             else:
                 plt.subplot(gs[1,0])
+            cutoff = 1e2
             x = np.arange(1, len(self.l2s) + 1)
-            y = np.array([el if abs(el) < 1e2 else 1e2 for el in self.l2s])
+            y = np.array([el if abs(el) < cutoff else el / abs(el) * cutoff for el in self.l2s])
             plt.plot(x, y, color='red', label='loss')
-            y = np.array([el if abs(el) < 1e2 else 1e2 for el in self.losses_match])
+            y = np.array([el if abs(el) < cutoff else el / abs(el) * cutoff for el in self.losses_match])
             plt.plot(x, y, color='blue', label='Qz=Pz loss')
-            y = np.array([el if abs(el) < 1e2 else 1e2 for el in self.losses_rec])
+            y = np.array([el if abs(el) < cutoff else el / abs(el) * cutoff for el in self.losses_rec])
             plt.plot(x, y, color='green', label='reconstruct loss')
             plt.legend(loc='upper right')
             if self.Qz is not  None:

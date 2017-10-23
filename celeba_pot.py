@@ -19,14 +19,14 @@ from metrics import Metrics
 import utils
 
 flags = tf.app.flags
-flags.DEFINE_float("g_learning_rate", 0.001,
+flags.DEFINE_float("g_learning_rate", 0.0001,
                    "Learning rate for Generator optimizers [16e-4]")
-flags.DEFINE_float("d_learning_rate", 0.0005,
+flags.DEFINE_float("d_learning_rate", 0.00005,
                    "Learning rate for Discriminator optimizers [4e-4]")
 flags.DEFINE_float("learning_rate", 0.003,
                    "Learning rate for other optimizers [8e-4]")
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
-flags.DEFINE_integer("zdim", 8, "Dimensionality of the latent space [100]")
+flags.DEFINE_integer("zdim", 64, "Dimensionality of the latent space [100]")
 flags.DEFINE_float("init_std", 0.0099999, "Initial variance for weights [0.02]")
 flags.DEFINE_string("workdir", 'results_celeba_pot', "Working directory ['results']")
 flags.DEFINE_bool("unrolled", False, "Use unrolled GAN training [True]")
@@ -58,7 +58,7 @@ def main():
     opts['toy_dataset_dim'] = 2
     opts['mnist3_dataset_size'] = 2 * 64 # 64 * 2500
     opts['mnist3_to_channels'] = False # Hide 3 digits of MNIST to channels
-    opts['input_normalize_sym'] = False # Normalize data to [-1, 1]
+    opts['input_normalize_sym'] = True # Normalize data to [-1, 1]
     opts['gmm_modes_num'] = 5
 
     # AdaGAN parameters
@@ -81,23 +81,24 @@ def main():
     opts["init_bias"] = 0.0
     opts['latent_space_distr'] = 'normal' # uniform, normal
     opts['latent_space_dim'] = FLAGS.zdim
-    opts["gan_epoch_num"] = 100
-    opts['convolutions'] = False # If False then encoder is MLP of 3 layers
-    opts['d_num_filters'] = 512
+    opts["gan_epoch_num"] = 300
+    opts['convolutions'] = True # If False then encoder is MLP of 3 layers
+    opts['d_num_filters'] = 1024
     opts['d_num_layers'] = 4
-    opts['g_num_filters'] = 512
+    opts['g_num_filters'] = 1024
     opts['g_num_layers'] = 4
     opts['e_is_random'] = False
     opts['e_pretrain'] = True
+    opts['e_add_noise'] = True
     opts['e_pretrain_bsize'] = 256
-    opts['e_num_filters'] = 512
+    opts['e_num_filters'] = 1024
     opts['e_num_layers'] = 4
-    opts['g_arch'] = 'mlp'
+    opts['g_arch'] = 'dcgan_mod'
     opts['g_stride1_deconv'] = False
     opts['g_3x3_conv'] = 0
     opts['e_arch'] = 'dcgan'
     opts['e_3x3_conv'] = 0
-    opts['conv_filters_dim'] = 5
+    opts['conv_filters_dim'] = 3
     # --GAN specific:
     opts['conditional'] = False
     opts['unrolled'] = FLAGS.unrolled # Use Unrolled GAN? (only for images)
@@ -120,12 +121,13 @@ def main():
     opts['reconstr_w'] = 1.0
     opts['z_test'] = 'gan'
     opts['gan_p_trick'] = True
+    opts['pz_transform'] = False
     opts['z_test_corr_w'] = 0.0
     opts['z_test_proj_dim'] = 10
 
     # Optimizer parameters
     opts['optimizer'] = 'adam' # sgd, adam
-    opts["batch_size"] = 100
+    opts["batch_size"] = 128
     opts["d_steps"] = 1
     opts['d_new_minibatch'] = False
     opts["g_steps"] = 2
@@ -135,7 +137,7 @@ def main():
     opts['recon_loss'] = 'l2sq'
     # "manual" or number (float or int) giving the number of epochs to divide
     # the learning rate by 10 (converted into an exp decay per epoch).
-    opts['decay_schedule'] = 'manual'
+    opts['decay_schedule'] = 'plateau'
     opts['opt_learning_rate'] = FLAGS.learning_rate
     opts['opt_d_learning_rate'] = FLAGS.d_learning_rate
     opts['opt_g_learning_rate'] = FLAGS.g_learning_rate

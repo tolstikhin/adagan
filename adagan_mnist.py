@@ -89,6 +89,7 @@ def main():
     opts['g_num_layers'] = 3
     opts['e_is_random'] = False
     opts['e_pretrain'] = False
+    opts['e_add_noise'] = False
     opts['e_pretrain_bsize'] = 1000
     opts['e_num_filters'] = 1024
     opts['e_num_layers'] = 4
