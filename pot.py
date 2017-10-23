@@ -1623,10 +1623,11 @@ class ImagePot(Pot):
         saver = tf.train.Saver(max_to_keep=10)
         tf.add_to_collection('real_points_ph', self._real_points_ph)
         tf.add_to_collection('noise_ph', self._noise_ph)
+        tf.add_to_collection('enc_noise_ph', self._enc_noise_ph)
         if opts['pz_transform']:
             tf.add_to_collection('noise', self._noise)
         tf.add_to_collection('is_training_ph', self._is_training_ph)
-        tf.add_to_collection('keep_prob_ph', self._is_training_ph)
+        tf.add_to_collection('keep_prob_ph', self._keep_prob_ph)
         tf.add_to_collection('encoder', self._Qz)
         tf.add_to_collection('decoder', self._generated)
         if d_logits_Pz is not None:
