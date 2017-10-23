@@ -14,9 +14,16 @@ import numpy as np
 from six.moves import cPickle
 import utils
 import PIL
+from utils import ArraySaver
 from PIL import Image
 import sys
 
+
+def _data_dir(opts):
+    if opts['data_dir'].startswith("/"):
+        return opts['data_dir']
+    else:
+        return os.path.join('./', opts['data_dir'])
 
 def load_cifar_batch(fpath, label_key='labels'):
     """Internal utility for parsing CIFAR data.
@@ -56,11 +63,13 @@ class Data(object):
                             in self.X.loaded
         self.X.loaded       list containing already loaded pictures
     """
-    def __init__(self, X, data_dir=None, paths=None, dict_loaded=None, loaded=None):
+    def __init__(self, opts, X, paths=None, dict_loaded=None, loaded=None):
         """
         X is either np.ndarray or paths
         """
+        data_dir = _data_dir(opts)
         self.X = None
+        self.normalize = opts['input_normalize_sym']
         self.paths = None
         self.dict_loaded = None
         self.loaded = None
@@ -115,6 +124,8 @@ class Data(object):
                     res.append(self.loaded[idx])
                 else:
                     point = self._read_image(self.data_dir, self.paths[key])
+                    if self.normalize:
+                        point = (point - 0.5) * 2.
                     res.append(point)
                     new_points.append(point)
                     new_keys.append(key)
@@ -185,23 +196,18 @@ class DataHandler(object):
         sym_applicable = ['mnist',
                           'mnist3',
                           'guitars',
-                          'cifar10']
+                          'cifar10',
+                          'celebA']
 
         if opts['input_normalize_sym'] and opts['dataset'] not in sym_applicable:
-            opts['input_normalize_sym'] = False
+            raise Exception('Can not normalyze this dataset')
 
         if opts['input_normalize_sym'] and opts['dataset'] in sym_applicable:
             # Normalize data to [-1, 1]
             if isinstance(self.data.X, np.ndarray):
                 self.data.X = (self.data.X - 0.5) * 2.
-            else:
-                raise Exception('Normalizing this dataset not implemented yet')
+            # Else we will normalyze while reading from disk
 
-    def _data_dir(self, opts):
-        if opts['data_dir'].startswith("/"):
-            return opts['data_dir']
-        else:
-            return os.path.join('./', opts['data_dir'])
 
     def _load_mog(self, opts):
         """Sample data from the mixture of Gaussians on circle.
@@ -231,7 +237,7 @@ class DataHandler(object):
             X[idx, :, 0, 0] = np.random.multivariate_normal(mean, cov, 1)
 
         self.data_shape = (opts['toy_dataset_dim'], 1, 1)
-        self.data = Data(X)
+        self.data = Data(opts, X)
         self.num_points = len(X)
 
     def _load_gmm(self, opts):
@@ -270,7 +276,7 @@ class DataHandler(object):
             X[idx, :, 0, 0] = np.random.multivariate_normal(mean, cov, 1)
 
         self.data_shape = (opts['toy_dataset_dim'], 1, 1)
-        self.data = Data(X)
+        self.data = Data(opts, X)
         self.num_points = len(X)
 
         logging.debug('Loading GMM dataset done!')
@@ -297,7 +303,7 @@ class DataHandler(object):
         np.random.seed()
 
         self.data_shape = (128, 128, 3)
-        self.data = Data(X/255.)
+        self.data = Data(opts, X/255.)
         self.num_points = len(X)
 
         logging.debug('Loading Done.')
@@ -310,7 +316,7 @@ class DataHandler(object):
             logging.debug('Loading MNIST')
         else:
             logging.debug('Loading ZALANDO')
-        data_dir = self._data_dir(opts)
+        data_dir = _data_dir(opts)
         # pylint: disable=invalid-name
         # Let us use all the bad variable names!
         tr_X = None
@@ -349,11 +355,11 @@ class DataHandler(object):
         np.random.seed()
 
         self.data_shape = (28, 28, 1)
-        self.data = Data(X)
+        self.data = Data(opts, X)
         self.labels = y
 
-        self.data = Data(X[:-1000])
-        self.test_data = Data(X[-1000:])
+        self.data = Data(opts, X[:-1000])
+        self.test_data = Data(opts, X[-1000:])
         self.labels = y[:-1000]
         self.test_labels = y[-1000:]
         self.num_points = len(self.data)
@@ -365,7 +371,7 @@ class DataHandler(object):
 
         """
         logging.debug('Loading 3-digit MNIST')
-        data_dir = self._data_dir(opts)
+        data_dir = _data_dir(opts)
         # pylint: disable=invalid-name
         # Let us use all the bad variable names!
         tr_X = None
@@ -418,7 +424,7 @@ class DataHandler(object):
                 y3[idx] = y[_id[0]] * 100 + y[_id[1]] * 10 + y[_id[2]]
             self.data_shape = (28, 28 * 3, 1)
 
-        self.data = Data(X3/255.)
+        self.data = Data(opts, X3/255.)
         y3 = y3.astype(int)
         self.labels = y3
         self.num_points = num
@@ -433,7 +439,7 @@ class DataHandler(object):
         logging.debug('Loading CIFAR10 dataset')
 
         num_train_samples = 50000
-        data_dir = self._data_dir(opts)
+        data_dir = _data_dir(opts)
         x_train = np.zeros((num_train_samples, 3, 32, 32), dtype='uint8')
         y_train = np.zeros((num_train_samples,), dtype='uint8')
 
@@ -464,8 +470,8 @@ class DataHandler(object):
 
         self.data_shape = (32, 32, 3)
 
-        self.data = Data(X[:-1000])
-        self.test_data = Data(X[-1000:])
+        self.data = Data(opts, X[:-1000])
+        self.test_data = Data(opts, X[-1000:])
         self.labels = y[:-1000]
         self.test_labels = y[-1000:]
         self.num_points = len(self.data)
@@ -479,18 +485,24 @@ class DataHandler(object):
 
         num_samples = 202599
 
-        paths = ['%.6d.jpg' % i for i in range(1, num_samples + 1)]
+        datapoint_ids = range(1, num_samples + 1)
+        paths = ['%.6d.jpg' % i for i in xrange(1, num_samples + 1)]
         seed = 123
         random.seed(seed)
         random.shuffle(paths)
+        random.shuffle(datapoint_ids)
         random.seed()
 
+        saver = ArraySaver('disk', workdir=opts['work_dir'])
+        saver.save('shuffled_training_ids', datapoint_ids)
+
         self.data_shape = (64, 64, 3)
-        self.data = Data(None, self._data_dir(opts), paths[:-10000])
-        self.test_data = Data(None, self._data_dir(opts), paths[-10000:])
-        self.num_points = num_samples - 10000
+        test_size = 512
+        self.data = Data(opts, None, paths[:-test_size])
+        self.test_data = Data(opts, None, paths[-test_size:])
+        self.num_points = num_samples - test_size
         self.labels = np.array(self.num_points * [0])
-        self.test_labels = np.array(10000 * [0])
+        self.test_labels = np.array(test_size * [0])
 
         logging.debug('Loading Done.')
 
