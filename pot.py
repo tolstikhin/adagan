@@ -309,6 +309,42 @@ class ImagePot(Pot):
         else:
             return tf.nn.sigmoid(last_h)
 
+    def began_dec(self, opts, noise, is_training, reuse, keep_prob):
+        """ Architecture reported here: https://arxiv.org/pdf/1703.10717.pdf
+        """
+
+        output_shape = self._data.data_shape
+        num_units = opts['g_num_filters']
+        num_layers = opts['g_num_layers']
+        batch_size = tf.shape(noise)[0]
+
+        h0 = ops.linear(
+            opts, noise, num_units * 8 * 8, scope='h0_lin')
+        h0 = tf.reshape(h0, [-1, 8, 8, num_units])
+        layer_x = h0
+        for i in xrange(num_layers):
+            if i % 3 < 2:
+                # Don't change resolution
+                layer_x = ops.conv2d(opts, layer_x, num_units, d_h=1, d_w=1, scope='h%d_conv' % i)
+                layer_x = tf.nn.elu(layer_x)
+            else:
+                if i != num_layers - 1:
+                    # Upsampling by factor of 2 with NN
+                    scale = 2 ** (i / 3 + 1)
+                    layer_x = ops.upsample_nn(layer_x, [scale * 8, scale * 8],
+                                              scope='h%d_upsample' % i, reuse=reuse)
+                    # Skip connection
+                    append = ops.upsample_nn(h0, [scale * 8, scale * 8],
+                                              scope='h%d_skipup' % i, reuse=reuse)
+                    layer_x = tf.concat([layer_x, append], axis=3)
+
+        last_h = ops.conv2d(opts, layer_x, output_shape[-1], d_h=1, d_w=1, scope='hlast_conv')
+
+        if opts['input_normalize_sym']:
+            return tf.nn.tanh(last_h)
+        else:
+            return tf.nn.sigmoid(last_h)
+
     def conv_up_res(self, opts, noise, is_training, reuse, keep_prob):
         output_shape = self._data.data_shape
         num_units = opts['g_num_filters']
@@ -435,6 +471,8 @@ class ImagePot(Pot):
                 return self.conv_up_res(opts, noise, is_training, reuse, keep_prob)
             elif opts['g_arch'] == 'ali':
                 return self.ali_deconv(opts, noise, is_training, reuse, keep_prob)
+            elif opts['g_arch'] == 'began':
+                return self.began_dec(opts, noise, is_training, reuse, keep_prob)
             else:
                 raise ValueError('%s unknown' % opts['g_arch'])
 
@@ -753,7 +791,7 @@ class ImagePot(Pot):
         elif kernel == 'IM':
             # C = tf.nn.top_k(tf.reshape(distances, [-1]), half_size).values[half_size - 1]
             # C += tf.nn.top_k(tf.reshape(distances_qz, [-1]), half_size).values[half_size - 1]
-            C = 1.
+            C = 2 * opts['latent_space_dim'] * sigma2_p
             res1 = C / (C + distances_qz)
             res1 += C / (C + distances_pz)
             res1 = tf.multiply(res1, 1. - tf.eye(n))
@@ -797,12 +835,13 @@ class ImagePot(Pot):
 
 
     def encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
-        def add_noise(x):
-            shape = tf.shape(x)
-            return x + tf.truncated_normal(shape, 0.0, 0.01)
-        def do_nothing(x):
-            return x
-        input_ = tf.cond(is_training, lambda: add_noise(input_), lambda: do_nothing(input_))
+        if opts['e_add_noise']:
+            def add_noise(x):
+                shape = tf.shape(x)
+                return x + tf.truncated_normal(shape, 0.0, 0.01)
+            def do_nothing(x):
+                return x
+            input_ = tf.cond(is_training, lambda: add_noise(input_), lambda: do_nothing(input_))
         num_units = opts['e_num_filters']
         num_layers = opts['e_num_layers']
         with tf.variable_scope("ENCODER", reuse=reuse):
@@ -825,6 +864,8 @@ class ImagePot(Pot):
                 return self.dcgan_encoder(opts, input_, is_training, reuse, keep_prob)
             elif opts['e_arch'] == 'ali':
                 return self.ali_encoder(opts, input_, is_training, reuse, keep_prob)
+            elif opts['e_arch'] == 'began':
+                return self.began_encoder(opts, input_, is_training, reuse, keep_prob)
             else:
                 raise ValueError('%s Unknown' % opts['e_arch'])
 
@@ -895,6 +936,35 @@ class ImagePot(Pot):
             layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bnlast')
         layer_x = ops.lrelu(layer_x, 0.1)
         layer_x = ops.conv2d(opts, layer_x, num_units / 2, d_h=1, d_w=1, scope='conv2d_1x1_2', conv_filters_dim=1)
+
+        if opts['e_is_random']:
+            latent_mean = ops.linear(
+                opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
+            log_latent_sigmas = ops.linear(
+                opts, layer_x, opts['latent_space_dim'], scope='hlast_lin_sigma')
+            return latent_mean, log_latent_sigmas
+        else:
+            return ops.linear(opts, layer_x, opts['latent_space_dim'], scope='hlast_lin')
+
+    def began_encoder(self, opts, input_, is_training=False, reuse=False, keep_prob=1.):
+        num_units = opts['e_num_filters']
+        assert num_units == opts['g_num_filters'], 'BEGAN requires same number of filters in encoder and decoder'
+        num_layers = opts['e_num_layers']
+        layer_x = ops.conv2d(opts, input_, num_units, scope='h_first_conv')
+        for i in xrange(num_layers):
+            if i % 3 < 2:
+                if i != num_layers - 2:
+                    ii = i - (i / 3)
+                    scale = (ii + 1 - ii / 2)
+                else:
+                    ii = i - (i / 3)
+                    scale = (ii - (ii - 1) / 2)
+                layer_x = ops.conv2d(opts, layer_x, num_units * scale, d_h=1, d_w=1, scope='h%d_conv' % i)
+                layer_x = tf.nn.elu(layer_x)
+            else:
+                if i != num_layers - 1:
+                    layer_x = ops.downsample(layer_x, scope='h%d_maxpool' % i, reuse=reuse)
+        # Tensor should be [N, 8, 8, filters] right now
 
         if opts['e_is_random']:
             latent_mean = ops.linear(
@@ -1399,7 +1469,6 @@ class ImagePot(Pot):
         # Pearson independence test of coordinates in Z space
         loss_z_corr = self.correlation_loss(opts, encoded_training)
         # Perform a Qz = Pz goodness of fit test based on Stein Discrepancy
-        loss_z_lks = self.discriminator_lks_test(opts, encoded_training)
         if opts['z_test'] == 'gan':
             # Pz = Qz test based on GAN in the Z space
             d_logits_Pz = self.discriminator(opts, noise)
@@ -1411,7 +1480,10 @@ class ImagePot(Pot):
                 tf.nn.sigmoid_cross_entropy_with_logits(
                     logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
             d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
-            loss_match = -d_loss_Qz - d_loss_Pz
+            if opts['pz_transform']:
+                loss_match = -d_loss_Qz - d_loss_Pz
+            else:
+                loss_match = -d_loss_Qz
         elif opts['z_test'] == 'mmd':
             # Pz = Qz test based on MMD(Pz, Qz)
             loss_match = self.discriminator_mmd_test(opts, encoded_training, noise)
@@ -1499,19 +1571,23 @@ class ImagePot(Pot):
         t_vars = tf.trainable_variables()
         # Updates for discriminator
         d_vars = [var for var in t_vars if 'DISCRIMINATOR/' in var.name]
-        # Updates for encoder, decoder and possibly pz-transform
-        eg_vars = [var for var in t_vars if 'DISCRIMINATOR/' not in var.name]
+        # Updates for everything but adversary (encoder, decoder and possibly pz-transform)
+        all_vars = [var for var in t_vars if 'DISCRIMINATOR/' not in var.name]
+        # Updates for everything but adversary (encoder, decoder and possibly pz-transform)
+        eg_vars = [var for var in t_vars if 'GENERATOR/' in var.name or 'ENCODER/' in var.name]
         # Encoder variables separately if we want to pretrain
         e_vars = [var for var in t_vars if 'ENCODER/' in var.name]
 
         logging.error('Param num in G and E: %d' % \
                 np.sum([np.prod([int(d) for d in v.get_shape()]) for v in eg_vars]))
+        for v in eg_vars:
+            print v.name, [int(d) for d in v.get_shape()]
 
         if len(d_vars) > 0:
             d_optim = ops.optimizer(opts, net='d', decay=lr_decay_ph).minimize(loss=d_loss, var_list=d_vars)
         else:
             d_optim = None
-        optim = ops.optimizer(opts, net='g', decay=lr_decay_ph).minimize(loss=loss, var_list=eg_vars)
+        optim = ops.optimizer(opts, net='g', decay=lr_decay_ph).minimize(loss=loss, var_list=all_vars)
         pretrain_optim = None
         if opts['e_pretrain']:
             pretrain_optim = ops.optimizer(opts, net='g').minimize(loss=loss_pretrain, var_list=e_vars)
@@ -1536,7 +1612,6 @@ class ImagePot(Pot):
         self._loss_reconstruct = loss_reconstr
         self._loss_match = loss_match
         self._loss_z_corr = loss_z_corr
-        self._loss_z_lks = loss_z_lks
         self._loss_pretrain = loss_pretrain
         self._additional_losses = additional_losses
         self._g_mom_stats = g_mom_stats
@@ -1596,6 +1671,7 @@ class ImagePot(Pot):
         """Train a POT model.
 
         """
+        logging.error(opts)
 
         batches_num = self._data.num_points / opts['batch_size']
         train_size = self._data.num_points
@@ -1726,8 +1802,8 @@ class ImagePot(Pot):
                 if opts['verbose'] and counter % 500 == 0:
                     # Printing (training and test) loss values
                     test = self._data.test_data[:]
-                    [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, loss_z_lks, additional_losses] = self._session.run(
-                        [self._loss_reconstruct, self._reconstruct_x, self._g_mom_stats, self._loss_z_corr, self._loss_z_lks,
+                    [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, additional_losses] = self._session.run(
+                        [self._loss_reconstruct, self._reconstruct_x, self._g_mom_stats, self._loss_z_corr,
                          self._additional_losses],
                         feed_dict={self._real_points_ph: test,
                                    self._enc_noise_ph: utils.generate_noise(opts, len(test)),
@@ -1737,8 +1813,8 @@ class ImagePot(Pot):
                     debug_str = 'Epoch: %d/%d, batch:%d/%d, batch/sec:%.2f' % (
                         _epoch+1, opts['gan_epoch_num'], _idx+1,
                         batches_num, float(counter) / (now - start_time))
-                    debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g, LKS=%.2g' % (
-                        loss, loss_rec, loss_match, loss_rec_test, loss_z_lks)
+                    debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g' % (
+                        loss, loss_rec, loss_match, loss_rec_test)
                     debug_str += ',' + ', '.join(
                         ['%s=%.2g' % (k, v) for (k, v) in additional_losses.items()])
                     logging.error(debug_str)
@@ -1828,6 +1904,13 @@ class ImagePot(Pot):
                         merged,
                         prefix='reconstr_e%04d_mb%05d_' % (_epoch, _idx))
                     sample_prev = points_to_plot[:]
+        if _epoch > 0:
+            os.path.join(opts['work_dir'], opts['ckpt_dir'])
+            self._saver.save(self._session,
+                             os.path.join(opts['work_dir'],
+                                          opts['ckpt_dir'],
+                                          'trained-pot-final'),
+                             global_step=counter)
 
     def _sample_internal(self, opts, num):
         """Sample from the trained GAN model.
