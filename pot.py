@@ -1361,6 +1361,7 @@ class ImagePot(Pot):
             v = self._proj_v
             covhat = self._proj_covhat
             proj_mat = tf.concat([v, u], 1).eval()
+            dot_prod = -1
             best_of_runs = 10e5 # Any positive value would do
             updated = False
             for _start in xrange(3):
@@ -1386,7 +1387,7 @@ class ImagePot(Pot):
                     proj_mat = tf.concat([v, u], 1).eval()
                     dot_prod = tf.reduce_sum(tf.multiply(u, v)).eval()
         if not updated:
-            logging.error('WARNING: possible buy in the worst 2d projection')
+            logging.error('WARNING: possible bug in the worst 2d projection')
         return proj_mat, dot_prod
 
     def _build_model_internal(self, opts):
@@ -1740,32 +1741,16 @@ class ImagePot(Pot):
                                self._is_training_ph: True,
                                self._keep_prob_ph: opts['dropout_keep_prob']})
 
-                # ======= for tracking the loss_match on newly sampled mini-batch
-                # new_data_ids = np.random.choice(train_size, opts['batch_size'],
-                #                             replace=False, p=self._data_weights)
-                # new_batch_noise = opts['pot_pz_std'] *\
-                #     utils.generate_noise(opts, opts['batch_size'])
-                # new_batch_images = self._data.data[data_ids].astype(np.float)
-                # [new_loss_match] = self._session.run([self._loss_match],
-                #     feed_dict={self._real_points_ph: new_batch_images,
-                #                self._noise_ph: new_batch_noise,
-                #                self._enc_noise_ph: batch_enc_noise,
-                #                self._lr_decay_ph: decay,
-                #                self._is_training_ph: True,
-                #                self._keep_prob_ph: opts['dropout_keep_prob']})
-                # print 'Loss match on a new mini-batch: ', new_loss_match
-                # ======
-
                 if opts['decay_schedule'] == "plateau":
                     # First 30 epochs do nothing
                     if _epoch >= 30:
-                        # If no significant progress was made in last 5 epochs 
+                        # If no significant progress was made in last 10 epochs
                         # then decrease the learning rate.
                         if loss < min(losses[-20 * batches_num:]):
                             wait = 0
                         else:
                             wait += 1
-                        if wait > 5 * batches_num:
+                        if wait > 10 * batches_num:
                             decay = max(decay  / 1.4, 1e-6)
                             logging.error('Reduction in learning rate: %f' % decay)
                             wait = 0
@@ -1814,7 +1799,7 @@ class ImagePot(Pot):
                     debug_str = 'Epoch: %d/%d, batch:%d/%d, batch/sec:%.2f' % (
                         _epoch+1, opts['gan_epoch_num'], _idx+1,
                         batches_num, float(counter) / (now - start_time))
-                    debug_str += '  [L=%.2g, Recon=%.2g, GanL=%.2g, Recon_test=%.2g' % (
+                    debug_str += '  [L=%.5f, Recon=%.5f, GanL=%.5f, Recon_test=%.5f' % (
                         loss, loss_rec, loss_match, loss_rec_test)
                     debug_str += ',' + ', '.join(
                         ['%s=%.2g' % (k, v) for (k, v) in additional_losses.items()])
