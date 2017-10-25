@@ -1480,11 +1480,14 @@ class ImagePot(Pot):
             d_loss_Qz = tf.reduce_mean(
                 tf.nn.sigmoid_cross_entropy_with_logits(
                     logits=d_logits_Qz, labels=tf.zeros_like(d_logits_Qz)))
+            d_loss_Qz_trick = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(
+                    logits=d_logits_Qz, labels=tf.ones_like(d_logits_Qz)))
             d_loss = opts['pot_lambda'] * (d_loss_Pz + d_loss_Qz)
             if opts['pz_transform']:
-                loss_match = -d_loss_Qz - d_loss_Pz
+                loss_match = d_loss_Qz_trick - d_loss_Pz
             else:
-                loss_match = -d_loss_Qz
+                loss_match = d_loss_Qz_trick
         elif opts['z_test'] == 'mmd':
             # Pz = Qz test based on MMD(Pz, Qz)
             loss_match = self.discriminator_mmd_test(opts, encoded_training, noise)
