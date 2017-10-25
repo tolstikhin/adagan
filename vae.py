@@ -221,7 +221,7 @@ class ImageVae(Vae):
             # data_shape[0] x data_shape[1] x ? -> data_shape
             h3 = ops.deconv2d(opts, h2, _out_shape,
                               d_h=1, d_w=1, scope='h3_deconv')
-            h3 = ops.batch_norm(opts, h3, is_training, reuse, scope='bn_layer4')
+            # h3 = ops.batch_norm(opts, h3, is_training, reuse, scope='bn_layer4')
 
         if return_logits:
             return h3
