@@ -174,7 +174,7 @@ class ImageVae(Vae):
 
         Vae.__init__(self, opts, data, weights)
 
-    def generator(self, opts, noise, is_training, reuse=False):
+    def generator(self, opts, noise, is_training, reuse=False, return_logits=False):
         """Generator function, suitable for simple picture experiments.
 
         Args:
@@ -182,6 +182,8 @@ class ImageVae(Vae):
                 latent noise space.
             is_training: bool, defines whether to use batch_norm in the train
                 or test mode.
+            return_logits: bool, if true returns the "logits" instead of being
+                normalized (by tanh or sigmoid depending on "input_normalize_sym".
         Returns:
             [num_points, dim1, dim2, dim3] array, where the first coordinate
             indexes the points, which all are of the shape (dim1, dim2, dim3).
@@ -220,6 +222,8 @@ class ImageVae(Vae):
                               d_h=1, d_w=1, scope='h3_deconv')
             h3 = ops.batch_norm(opts, h3, is_training, reuse, scope='bn_layer4')
 
+        if return_logits:
+            return h3
         if opts['input_normalize_sym']:
             return tf.nn.tanh(h3)
         else:
@@ -266,22 +270,37 @@ class ImageVae(Vae):
 
         latent_x_mean, log_latent_sigmas = self.discriminator(
             opts, real_points_ph, is_training_ph)
-        scaled_noise = tf.multiply(tf.sqrt(tf.exp(log_latent_sigmas) + 1e-5), noise_ph)
-        reconstruct_x = self.generator(opts, latent_x_mean + scaled_noise,
-                                       is_training_ph)
-        dec_enc_x = self.generator(opts, latent_x_mean,
-                                   is_training=False, reuse=True)
+        scaled_noise = tf.multiply(
+            tf.sqrt(1e-6 + tf.exp(log_latent_sigmas)), noise_ph)
         loss_kl = 0.5 * tf.reduce_sum(
             tf.exp(log_latent_sigmas) +
             tf.square(latent_x_mean) -
             log_latent_sigmas, axis=1)
-        loss_reconstruct = tf.reduce_sum(
-            tf.square(real_points_ph - reconstruct_x), axis=[1, 2, 3])
-        loss_reconstruct = loss_reconstruct / 2. / opts['vae_sigma']
+        if opts['recon_loss'] == 'l2sq':
+            reconstruct_x = self.generator(opts, latent_x_mean + scaled_noise,
+                                           is_training_ph)
+            loss_reconstruct = tf.reduce_sum(
+                tf.square(real_points_ph - reconstruct_x), axis=[1,2,3])
+            loss_reconstruct = loss_reconstruct / 2. / opts['vae_sigma']
+        elif opts['recon_loss'] == 'cross_entropy':
+            assert opts['input_normalize_sym'], 'For cross entropy loss we require the normalization.'
+            expected = (real_points_ph + 1.0) / 2.0
+            reconstruct_x_logits = self.generator(
+                opts, latent_x_mean + scaled_noise,
+                is_training_ph, return_logits=True)
+            loss_reconstruct = tf.reduce_sum(
+                tf.nn.sigmoid_cross_entropy_with_logits(
+                    labels=expected, logits=reconstruct_x_logits),
+                axis=[1,2,3])
+        else:
+            raise ValueError("Unknown recon loss value %s" % opts['recon_loss'])
+        dec_enc_x = self.generator(opts, latent_x_mean,
+                                   is_training=False, reuse=True)
+
         loss_reconstruct = tf.reduce_mean(loss_reconstruct)
         loss_kl = tf.reduce_mean(loss_kl)
         loss = loss_kl + loss_reconstruct
-        #loss = tf.Print(loss, [loss, loss_kl, loss_reconstruct], 'Loss, KL, reconstruct')
+        # loss = tf.Print(loss, [loss, loss_kl, loss_reconstruct], 'Loss, KL, reconstruct')
         optim = ops.optimizer(opts).minimize(loss)
 
         generated_images = self.generator(opts, noise_ph,
