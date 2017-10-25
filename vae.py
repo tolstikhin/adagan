@@ -266,7 +266,7 @@ class ImageVae(Vae):
 
         latent_x_mean, log_latent_sigmas = self.discriminator(
             opts, real_points_ph, is_training_ph)
-        scaled_noise = tf.multiply(tf.sqrt(tf.exp(log_latent_sigmas)), noise_ph)
+        scaled_noise = tf.multiply(tf.sqrt(tf.exp(log_latent_sigmas) + 1e-5), noise_ph)
         reconstruct_x = self.generator(opts, latent_x_mean + scaled_noise,
                                        is_training_ph)
         dec_enc_x = self.generator(opts, latent_x_mean,
@@ -276,7 +276,7 @@ class ImageVae(Vae):
             tf.square(latent_x_mean) -
             log_latent_sigmas, axis=1)
         loss_reconstruct = tf.reduce_sum(
-            tf.square(real_points_ph - reconstruct_x), axis=1)
+            tf.square(real_points_ph - reconstruct_x), axis=[1, 2, 3])
         loss_reconstruct = loss_reconstruct / 2. / opts['vae_sigma']
         loss_reconstruct = tf.reduce_mean(loss_reconstruct)
         loss_kl = tf.reduce_mean(loss_kl)
@@ -296,6 +296,18 @@ class ImageVae(Vae):
         self._loss_kl = loss_kl
         self._generated = generated_images
         self._reconstruct_x = dec_enc_x
+        self._enc_mean = latent_x_mean
+        self._enc_log_var = log_latent_sigmas
+
+        saver = tf.train.Saver(max_to_keep=10)
+        tf.add_to_collection('real_points_ph', self._real_points_ph)
+        tf.add_to_collection('noise_ph', self._noise_ph)
+        tf.add_to_collection('is_training_ph', self._is_training_ph)
+        tf.add_to_collection('encoder_mean', self._enc_mean)
+        tf.add_to_collection('encoder_log_sigma', self._enc_log_var)
+        tf.add_to_collection('decoder', self._generated)
+
+        self._saver = saver
 
         logging.error("Building Graph Done.")
 
@@ -314,6 +326,15 @@ class ImageVae(Vae):
         counter = 0
         logging.error('Training VAE')
         for _epoch in xrange(opts["gan_epoch_num"]):
+
+            if _epoch > 0 and _epoch % opts['save_every_epoch'] == 0:
+                os.path.join(opts['work_dir'], opts['ckpt_dir'])
+                self._saver.save(self._session,
+                                 os.path.join(opts['work_dir'],
+                                              opts['ckpt_dir'],
+                                              'trained-pot'),
+                                 global_step=counter)
+
             for _idx in xrange(batches_num):
                 # logging.error('Step %d of %d' % (_idx, batches_num ) )
                 data_ids = np.random.choice(train_size, opts['batch_size'],
@@ -362,6 +383,13 @@ class ImageVae(Vae):
                         prefix='reconstr_e%04d_mb%05d_' % (_epoch, _idx))
                 if opts['early_stop'] > 0 and counter > opts['early_stop']:
                     break
+        if _epoch > 0:
+            os.path.join(opts['work_dir'], opts['ckpt_dir'])
+            self._saver.save(self._session,
+                             os.path.join(opts['work_dir'],
+                                          opts['ckpt_dir'],
+                                          'trained-pot-final'),
+                             global_step=counter)
 
     def _sample_internal(self, opts, num):
         """Sample from the trained GAN model.
