@@ -284,8 +284,10 @@ class ImageVae(Vae):
                 tf.square(real_points_ph - reconstruct_x), axis=[1,2,3])
             loss_reconstruct = loss_reconstruct / 2. / opts['vae_sigma']
         elif opts['recon_loss'] == 'cross_entropy':
-            assert opts['input_normalize_sym'], 'For cross entropy loss we require the normalization.'
-            expected = (real_points_ph + 1.0) / 2.0
+            if opts['input_normalize_sym']:
+                expected = (real_points_ph + 1.0) / 2.0
+            else:
+                expected = real_points_ph
             reconstruct_x_logits = self.generator(
                 opts, latent_x_mean + scaled_noise,
                 is_training_ph, return_logits=True)
