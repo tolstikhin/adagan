@@ -50,7 +50,7 @@ def main():
     opts['tf_run_batch_size'] = 128
     opts["early_stop"] = -1 # set -1 to run normally
     opts["plot_every"] = 50
-    opts["save_every_epoch"] = 1
+    opts["save_every_epoch"] = 20
     opts['gmm_max_val'] = 15.
 
     # Datasets
