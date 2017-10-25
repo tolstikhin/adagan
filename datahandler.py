@@ -155,7 +155,7 @@ class Data(object):
             right = (width + new_width) / 2
             bottom = (height + new_height)/2
             im = im.crop((left, top, right, bottom))
-            im = im.resize((64, 64), PIL.Image.LANCZOS)
+            im = im.resize((64, 64), PIL.Image.ANTIALIAS)
         elif self.crop_style == 'resizecrop':
             # This method was used in ALI, AGE, ...
             im = im.resize((64, 78), PIL.Image.ANTIALIAS)
