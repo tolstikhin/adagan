@@ -41,6 +41,7 @@ def main():
     # Utility
     opts['random_seed'] = 66
     opts['dataset'] = 'celebA' # gmm, circle_gmm,  mnist, mnist3 ...
+    opts['celebA_crop'] == 'closecrop' # closecrop or resizecrop
     opts['data_dir'] = 'celebA/datasets/celeba/img_align_celeba'
     opts['trained_model_path'] = None #'models'
     opts['mnist_trained_model_file'] = None #'mnist_trainSteps_19999_yhat' # 'mnist_trainSteps_20000'
@@ -127,7 +128,7 @@ def main():
 
     # Optimizer parameters
     opts['optimizer'] = 'adam' # sgd, adam
-    opts["batch_size"] = 128
+    opts["batch_size"] = 64
     opts["d_steps"] = 1
     opts['d_new_minibatch'] = False
     opts["g_steps"] = 2
