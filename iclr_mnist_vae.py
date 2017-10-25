@@ -49,7 +49,7 @@ def main():
     opts["verbose"] = 1
     opts['tf_run_batch_size'] = 128
     opts["early_stop"] = -1 # set -1 to run normally
-    opts["plot_every"] = 50
+    opts["plot_every"] = 200
     opts["save_every_epoch"] = 20
     opts['gmm_max_val'] = 15.
 
@@ -58,7 +58,7 @@ def main():
     opts['toy_dataset_dim'] = 2
     opts['mnist3_dataset_size'] = 2 * 64 # 64 * 2500
     opts['mnist3_to_channels'] = False # Hide 3 digits of MNIST to channels
-    opts['input_normalize_sym'] = True # Normalize data to [-1, 1]
+    opts['input_normalize_sym'] = False # Normalize data to [-1, 1]
     opts['gmm_modes_num'] = 5
 
     # AdaGAN parameters

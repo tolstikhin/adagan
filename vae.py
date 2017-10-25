@@ -202,21 +202,20 @@ class ImageVae(Vae):
             h0 = ops.linear(opts, noise, num_filters * height * width,
                             scope='h0_lin')
             h0 = tf.reshape(h0, [-1, height, width, num_filters])
-            h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
-            # h0 = tf.nn.relu(h0)
-            h0 = ops.lrelu(h0)
+            h0 = tf.nn.relu(h0)
+            # h0 = ops.lrelu(h0)
             _out_shape = [dim1, height * 2, width * 2, num_filters / 2]
             # for 28 x 28 does 7 x 7 --> 14 x 14
             h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
             h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
-            # h1 = tf.nn.relu(h1)
-            h1 = ops.lrelu(h1)
+            h1 = tf.nn.relu(h1)
+            # h1 = ops.lrelu(h1)
             _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
             # for 28 x 28 does 14 x 14 --> 28 x 28
             h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
             h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
-            # h2 = tf.nn.relu(h2)
-            h2 = ops.lrelu(h2)
+            h2 = tf.nn.relu(h2)
+            # h2 = ops.lrelu(h2)
             _out_shape = [dim1] + list(output_shape)
             # data_shape[0] x data_shape[1] x ? -> data_shape
             h3 = ops.deconv2d(opts, h2, _out_shape,
@@ -238,18 +237,21 @@ class ImageVae(Vae):
         num_filters = opts['d_num_filters']
 
         with tf.variable_scope(prefix, reuse=reuse):
-            h0 = ops.conv2d(opts, input_, num_filters, scope='h0_conv')
+            h0 = ops.conv2d(opts, input_, num_filters / 8, scope='h0_conv')
             h0 = ops.batch_norm(opts, h0, is_training, reuse, scope='bn_layer1')
-            h0 = ops.lrelu(h0)
-            h1 = ops.conv2d(opts, h0, num_filters * 2, scope='h1_conv')
+            h0 = tf.nn.relu(h0)
+            h1 = ops.conv2d(opts, h0, num_filters / 4, scope='h1_conv')
             h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
-            h1 = ops.lrelu(h1)
-            h2 = ops.conv2d(opts, h1, num_filters * 4, scope='h2_conv')
+            h1 = tf.nn.relu(h1)
+            h2 = ops.conv2d(opts, h1, num_filters / 2, scope='h2_conv')
             h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
-            h2 = ops.lrelu(h2)
+            h2 = tf.nn.relu(h2)
+            h3 = ops.conv2d(opts, h2, num_filters, scope='h3_conv')
+            h3 = ops.batch_norm(opts, h3, is_training, reuse, scope='bn_layer4')
+            h3 = tf.nn.relu(h3)
             # Already has NaNs!!
-            latent_mean = ops.linear(opts, h2, opts['latent_space_dim'], scope='h3_lin')
-            log_latent_sigmas = ops.linear(opts, h2, opts['latent_space_dim'], scope='h3_lin_sigma')
+            latent_mean = ops.linear(opts, h3, opts['latent_space_dim'], scope='h3_lin')
+            log_latent_sigmas = ops.linear(opts, h3, opts['latent_space_dim'], scope='h3_lin_sigma')
 
         return latent_mean, log_latent_sigmas
 
@@ -265,6 +267,7 @@ class ImageVae(Vae):
         noise_ph = tf.placeholder(
             tf.float32, [None] + [opts['latent_space_dim']], name='noise_ph')
         is_training_ph = tf.placeholder(tf.bool, name='is_train_ph')
+        lr_decay_ph = tf.placeholder(tf.float32)
 
 
         # Operations
@@ -304,7 +307,7 @@ class ImageVae(Vae):
         loss_kl = tf.reduce_mean(loss_kl)
         loss = loss_kl + loss_reconstruct
         # loss = tf.Print(loss, [loss, loss_kl, loss_reconstruct], 'Loss, KL, reconstruct')
-        optim = ops.optimizer(opts).minimize(loss)
+        optim = ops.optimizer(opts, net='g', decay=lr_decay_ph).minimize(loss)
 
         generated_images = self.generator(opts, noise_ph,
                                           is_training_ph, reuse=True)
@@ -315,6 +318,7 @@ class ImageVae(Vae):
         self._optim = optim
         self._loss = loss
         self._loss_reconstruct = loss_reconstruct
+        self._lr_decay_ph = lr_decay_ph
         self._loss_kl = loss_kl
         self._generated = generated_images
         self._reconstruct_x = dec_enc_x
@@ -346,8 +350,17 @@ class ImageVae(Vae):
         l2s = []
 
         counter = 0
+        decay = 1.
         logging.error('Training VAE')
         for _epoch in xrange(opts["gan_epoch_num"]):
+
+            if opts['decay_schedule'] == "manual":
+                if _epoch == 30:
+                    decay = decay / 2.
+                if _epoch == 50:
+                    decay = decay / 5.
+                if _epoch == 100:
+                    decay = decay / 10.
 
             if _epoch > 0 and _epoch % opts['save_every_epoch'] == 0:
                 os.path.join(opts['work_dir'], opts['ckpt_dir'])
@@ -368,10 +381,11 @@ class ImageVae(Vae):
                      self._loss_reconstruct],
                     feed_dict={self._real_points_ph: batch_images,
                                self._noise_ph: batch_noise,
+                               self._lr_decay_ph: decay,
                                self._is_training_ph: True})
                 counter += 1
 
-                if opts['verbose'] and counter % 50 == 0:
+                if opts['verbose'] and counter % opts['plot_every'] == 0:
                     debug_str = 'Epoch: %d/%d, batch:%d/%d' % (
                         _epoch+1, opts['gan_epoch_num'], _idx+1, batches_num)
                     debug_str += '  [L=%.2g, Recon=%.2g, KLQ=%.2g]' % (
