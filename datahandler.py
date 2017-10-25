@@ -82,6 +82,8 @@ class Data(object):
             self.paths = paths[:]
             self.dict_loaded = {} if dict_loaded is None else dict_loaded
             self.loaded = [] if loaded is None else loaded
+            self.crop_style = opts['celebA_crop']
+            self.dataset_name = opts['dataset']
 
     def __len__(self):
         if isinstance(self.X, np.ndarray):
@@ -123,7 +125,10 @@ class Data(object):
                     idx = self.dict_loaded[key]
                     res.append(self.loaded[idx])
                 else:
-                    point = self._read_image(self.data_dir, self.paths[key])
+                    if self.dataset_name == 'celebA':
+                        point = self._read_celeba_image(self.data_dir, self.paths[key])
+                    else:
+                        raise Exception('Disc read for this dataset not implemented yet...')
                     if self.normalize:
                         point = (point - 0.5) * 2.
                     res.append(point)
@@ -137,18 +142,26 @@ class Data(object):
             self.loaded.extend(new_points)
             return np.array(res)
 
-    def _read_image(self, data_dir, filename):
+    def _read_celeba_image(self, data_dir, filename):
         width = 178
         height = 218
         new_width = 140
         new_height = 140
         im = Image.open(utils.o_gfile((data_dir, filename), 'rb'))
-        left = (width - new_width) / 2
-        top = (height - new_height) / 2
-        right = (width + new_width) / 2
-        bottom = (height + new_height)/2
-        im = im.crop((left, top, right, bottom))
-        im = im.resize((64, 64), PIL.Image.LANCZOS)
+        if self.crop_style == 'closecrop':
+            # This method was used in DCGAN, pytorch-gan-collection, AVB, ...
+            left = (width - new_width) / 2
+            top = (height - new_height) / 2
+            right = (width + new_width) / 2
+            bottom = (height + new_height)/2
+            im = im.crop((left, top, right, bottom))
+            im = im.resize((64, 64), PIL.Image.LANCZOS)
+        elif self.crop_style == 'resizecrop':
+            # This method was used in ALI, AGE, ...
+            im = im.resize((64, 78), PIL.Image.ANTIALIAS)
+            im = im.crop((0, 7, 64, 64 + 7))
+        else:
+            raise Exception('Unknown crop style specified')
         return np.array(im).reshape(64, 64, 3) / 255.
 
 class DataHandler(object):
