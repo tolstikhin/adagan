@@ -83,7 +83,7 @@ def main():
     opts['latent_space_dim'] = FLAGS.zdim
     opts["gan_epoch_num"] = 100
     opts['convolutions'] = True # If False then encoder is MLP of 3 layers
-    opts['d_num_filters'] = 64
+    opts['d_num_filters'] = 1024
     opts['d_num_layers'] = 4
     opts['g_num_filters'] = 1024
     opts['g_num_layers'] = 3
