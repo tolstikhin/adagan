@@ -32,7 +32,7 @@ class Metrics(object):
         self.Qz = None
 
     def make_plots(self, opts, step, real_points,
-                   fake_points, weights=None, prefix='', max_rows=16):
+                   fake_points, weights=None, prefix='', max_rows=16, name_force=None):
         """Save plots of samples from the current model to the file.
         Args:
             step: integer, identifying the step number (of AdaGAN or anything)
@@ -66,7 +66,7 @@ class Metrics(object):
                 logging.debug('Can not plot, sorry...')
         elif opts['dataset'] in pic_datasets:
             self._make_plots_pics(opts, step, real_points,
-                                  fake_points, weights, prefix, max_rows)
+                                  fake_points, weights, prefix, max_rows, name_force)
         else:
             logging.debug('Can not plot, sorry...')
 
@@ -475,7 +475,8 @@ class Metrics(object):
                     format='png')
 
     def _make_plots_pics(self, opts, step, real_points,
-                         fake_points, weights=None, prefix='', max_rows=16):
+                         fake_points, weights=None, prefix='', max_rows=16,
+                         name_force=None):
         pics = []
         if opts['dataset'] in ('mnist', 'zalando', 'mnist3', 'guitars', 'cifar10', 'celebA'):
             if opts['input_normalize_sym']:
@@ -565,10 +566,11 @@ class Metrics(object):
             x = np.arange(1, len(self.l2s) + 1)
             y = np.array([el if abs(el) < cutoff else el / abs(el) * cutoff for el in self.l2s])
             plt.plot(x, y, color='red', label='loss')
-            y = np.array([el if abs(el) < cutoff else el / abs(el) * cutoff for el in self.losses_match])
-            plt.plot(x, y, color='blue', label='Qz=Pz loss')
-            y = np.array([el if abs(el) < cutoff else el / abs(el) * cutoff for el in self.losses_rec])
-            plt.plot(x, y, color='green', label='reconstruct loss')
+            if self.losses_match is not None and self.losses_rec is not None:
+                y = np.array([el if abs(el) < cutoff else el / abs(el) * cutoff for el in self.losses_match])
+                plt.plot(x, y, color='blue', label='Qz=Pz loss')
+                y = np.array([el if abs(el) < cutoff else el / abs(el) * cutoff for el in self.losses_rec])
+                plt.plot(x, y, color='green', label='reconstruct loss')
             plt.legend(loc='upper right')
             if self.Qz is not  None:
                 # Plotting the Qz scatter plot
@@ -593,7 +595,10 @@ class Metrics(object):
                 plt.ylim(ymin, ymax)
                 plt.legend(loc='upper left')
         # Saving
-        filename = prefix + 'mixture{:06d}.png'.format(step)
+        if name_force is None:
+            filename = prefix + 'mixture{:06d}.png'.format(step)
+        else:
+            filename = name_force
         utils.create_dir(opts['work_dir'])
         fig.savefig(utils.o_gfile((opts["work_dir"], filename), 'wb'),
                     dpi=dpi, format='png')
