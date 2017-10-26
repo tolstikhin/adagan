@@ -194,32 +194,48 @@ class ImageVae(Vae):
         # Computing the number of noise vectors on-the-go
         dim1 = tf.shape(noise)[0]
         num_filters = opts['g_num_filters']
+        num_layers = opts['g_num_layers']
 
         with tf.variable_scope("GENERATOR", reuse=reuse):
 
-            height = output_shape[0] / 4
-            width = output_shape[1] / 4
+            height = output_shape[0] /  2**(num_layers - 1)
+            width = output_shape[1] / 2**(num_layers - 1)
             h0 = ops.linear(opts, noise, num_filters * height * width,
                             scope='h0_lin')
             h0 = tf.reshape(h0, [-1, height, width, num_filters])
             h0 = tf.nn.relu(h0)
-            # h0 = ops.lrelu(h0)
-            _out_shape = [dim1, height * 2, width * 2, num_filters / 2]
-            # for 28 x 28 does 7 x 7 --> 14 x 14
-            h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
-            h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
-            h1 = tf.nn.relu(h1)
-            # h1 = ops.lrelu(h1)
-            _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
-            # for 28 x 28 does 14 x 14 --> 28 x 28
-            h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
-            h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
-            h2 = tf.nn.relu(h2)
-            # h2 = ops.lrelu(h2)
+
+            layer_x = h0
+            for i in xrange(num_layers-1):
+                scale = 2**(i+1)
+                _out_shape = [dim1, height * scale, width * scale, num_filters / scale]
+                layer_x = ops.deconv2d(opts, layer_x, _out_shape, scope='h%d_deconv' % i)
+                if opts['batch_norm']:
+                    layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='bn%d' % i)
+                layer_x = tf.nn.relu(layer_x)
+                if opts['dropout']:
+                    _keep_prob = tf.minimum(
+                        1., 0.9 - (0.9 - keep_prob) * float(i + 1) / (num_layers - 1))
+                    layer_x = tf.nn.dropout(layer_x, _keep_prob)
+
+            # # h0 = ops.lrelu(h0)
+            # _out_shape = [dim1, height * 2, width * 2, num_filters / 2]
+            # # for 28 x 28 does 7 x 7 --> 14 x 14
+            # h1 = ops.deconv2d(opts, h0, _out_shape, scope='h1_deconv')
+            # h1 = ops.batch_norm(opts, h1, is_training, reuse, scope='bn_layer2')
+            # h1 = tf.nn.relu(h1)
+            # # h1 = ops.lrelu(h1)
+            # _out_shape = [dim1, height * 4, width * 4, num_filters / 4]
+            # # for 28 x 28 does 14 x 14 --> 28 x 28
+            # h2 = ops.deconv2d(opts, h1, _out_shape, scope='h2_deconv')
+            # h2 = ops.batch_norm(opts, h2, is_training, reuse, scope='bn_layer3')
+            # h2 = tf.nn.relu(h2)
+            # # h2 = ops.lrelu(h2)
+
             _out_shape = [dim1] + list(output_shape)
             # data_shape[0] x data_shape[1] x ? -> data_shape
-            h3 = ops.deconv2d(opts, h2, _out_shape,
-                              d_h=1, d_w=1, scope='h3_deconv')
+            h3 = ops.deconv2d(opts, layer_x, _out_shape,
+                              d_h=1, d_w=1, scope='hlast_deconv')
             # h3 = ops.batch_norm(opts, h3, is_training, reuse, scope='bn_layer4')
 
         if return_logits:
