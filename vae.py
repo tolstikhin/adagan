@@ -307,7 +307,7 @@ class ImageVae(Vae):
         loss_kl = tf.reduce_mean(loss_kl)
         loss = loss_kl + loss_reconstruct
         # loss = tf.Print(loss, [loss, loss_kl, loss_reconstruct], 'Loss, KL, reconstruct')
-        optim = ops.optimizer(opts, net='g', decay=lr_decay_ph).minimize(loss)
+        optim = ops.optimizer(opts, decay=lr_decay_ph).minimize(loss)
 
         generated_images = self.generator(opts, noise_ph,
                                           is_training_ph, reuse=True)
