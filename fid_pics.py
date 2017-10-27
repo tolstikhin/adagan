@@ -21,10 +21,10 @@ from datahandler import DataHandler
 NUM_PICS = 10000
 SAVE_REAL_PICS = True
 SAVE_PNG = True
-SAVE_FAKE_PICS = True
+SAVE_FAKE_PICS = False
 CELEBA_DATA_DIR = 'celebA/datasets/celeba/img_align_celeba'
 MNIST_DATA_DIR = 'mnist'
-OUT_DIR = 'fid_pics'
+OUT_DIR = 'fid_pics_celeba'
 
 class ExpInfo(object):
     def __init__(self):
@@ -203,7 +203,7 @@ def main():
             if dataset == 'celebA':
                 shuffled_ids = np.load(os.path.join(model_path, 'shuffled_training_ids'))
                 test_ids = shuffled_ids[-exp.test_size:]
-                test_images = data.data[test_ids]
+                test_images = data.data
                 train_ids = shuffled_ids[:-exp.test_size]
                 train_images = data.data
             else:
