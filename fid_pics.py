@@ -276,7 +276,10 @@ def save_pic(pic, path, exp):
         if exp.dataset == 'mnist':
             pic = pic[:, :, 0]
             pic = 1. - pic
-        ax.imshow(pic, cmap='Greys', interpolation='none')
+        if exp.dataset == 'mnist':
+            ax.imshow(pic, cmap='Greys', interpolation='none')
+        else:
+            ax.imshow(pic, interpolation='none')
         fig.savefig(path, dpi=1, format='png')
         plt.close()
         # if exp.dataset == 'mnist':
