@@ -61,16 +61,16 @@ class AdaGan(object):
                 gan_class = GAN.ImageUnrolledGan
                 # gan_class = GAN.ToyUnrolledGan
             else:
-                if opts['vae']:
+                if 'vae' in opts and opts['vae']:
                     gan_class = VAE.ImageVae
                     assert opts['latent_space_distr'] == 'normal',\
                         'VAE works only with Gaussian prior'
-                elif opts['pot']:
+                elif 'pot' in opts and opts['pot']:
                     gan_class = POT.ImagePot
                 else:
                     gan_class = GAN.ImageGan
                     if opts['dataset'] in supervised_pic_datasets\
-                            and opts['conditional']:
+                            and 'conditional' in opts and opts['conditional']:
                         gan_class = GAN.MNISTLabelGan
         elif opts['dataset'] == 'guitars':
             if opts['unrolled']:
