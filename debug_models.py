@@ -16,17 +16,20 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import utils
 
-z_dim = 8
+z_dim = 64
+pz_std = 2.
+dataset = 'celebA'
 num_cols = 10
 num_pairs = 10
-ckpt_dir = os.path.join('.', 'trained_mnist_gan')
-output_dir = 'trained_mnist_gan/pics'
+ckpt_dir = os.path.join('.', 'trained_celeba_gan')
+output_dir = 'trained_celeba_gan/pics'
+normalyze = True
 
 with tf.Session() as sess:
     saver = tf.train.import_meta_graph(
         # os.path.join('.', 'results_cifar10_pot_conv', 'checkpoints', 'trained-pot-1.meta'))
-        os.path.join(ckpt_dir, 'trained-pot-62100.meta'))
-    saver.restore(sess, os.path.join(ckpt_dir, 'trained-pot-62100'))
+        os.path.join(ckpt_dir, 'trained-pot-126480.meta'))
+    saver.restore(sess, os.path.join(ckpt_dir, 'trained-pot-126480'))
     # saver.restore(sess, os.path.join('.', 'results_cifar10_pot_conv', 'checkpoints', 'trained-pot-1'))
     noise_ph = tf.get_collection('noise_ph')[0]
     bn_ph = tf.get_collection('is_training_ph')[0]
@@ -34,15 +37,15 @@ with tf.Session() as sess:
 
     mean = np.zeros(z_dim)
     cov = np.identity(z_dim)
-    noise = 2. * np.random.multivariate_normal(
+    noise = pz_std * np.random.multivariate_normal(
         mean, cov, 16 * num_cols).astype(np.float32)
 
     # 1. Random samples
     res = sess.run(decoder, feed_dict={noise_ph: noise, bn_ph: False})
     metrics = Metrics()
     opts = {}
-    opts['dataset'] = 'mnist'
-    opts['input_normalize_sym'] = False
+    opts['dataset'] = dataset
+    opts['input_normalize_sym'] = normalyze
     opts['work_dir'] = output_dir
     metrics.make_plots(opts, 0, None, res, prefix='samples')
 
@@ -76,16 +79,27 @@ with tf.Session() as sess:
             _lambda = np.reshape(_lambda, (60, 1))
             line = np.dot(_lambda, a) + np.dot((1 - _lambda), b)
             pics = sess.run(decoder, feed_dict={noise_ph: line, bn_ph: False})
+            if normalyze:
+                pics = (pics + 1.) / 2.
             if res is None:
-                res = 1. - pics
+                if opts['dataset'] == 'mnist':
+                    res = 1. - pics
+                else:
+                    res = pics
             else:
-                res = np.vstack([res, 1. - pics])
+                if opts['dataset'] == 'mnist':
+                    res = np.vstack([res, 1. - pics])
+                else:
+                    res = np.vstack([res, pics])
     # 60 cols and res.shape[0] rows
     num_cols = 60
     res = np.split(res, num_pairs * (num_pairs - 1) / 2)
     res = np.concatenate(res, axis = 1)
     res = np.concatenate(res, axis = 1)
-    image = res[:, :, 0]
+    if opts['dataset'] == 'mnist':
+        image = res[:, :, 0]
+    else:
+        image = res[:, :, :]
 
     dpi = 100
     height_pic = image.shape[0]
@@ -93,7 +107,10 @@ with tf.Session() as sess:
     height = 3 * height_pic / float(dpi)
     width = 3 * width_pic / float(dpi)
     fig = plt.figure(figsize=(width, height))#, dpi=1)
-    ax = plt.imshow(image, cmap='Greys', interpolation='none')
+    if opts['dataset'] == 'mnist':
+        ax = plt.imshow(image, cmap='Greys', interpolation='none')
+    else:
+        ax = plt.imshow(image, interpolation='none')
     ax.axes.get_xaxis().set_ticks([])
     ax.axes.get_yaxis().set_ticks([])
     ax.axes.set_xlim([0, width_pic])
@@ -109,14 +126,15 @@ with tf.Session() as sess:
     for i in range(len(ids)):
         id1 = ids[i]
         b = np.reshape(noise[id1, :], (1, z_dim))
-        _lambda = np.linspace(0., 10., 60)
-        _lambda = np.reshape(_lambda, (60, 1))
+        b /= np.sqrt(np.sum(b * b))
+        _lambda = np.linspace(0., np.sqrt(z_dim * pz_std * pz_std) * 5, 30)
+        _lambda = np.reshape(_lambda, (30, 1))
         line = np.dot(_lambda, b)
         res = sess.run(decoder, feed_dict={noise_ph: line, bn_ph: False})
         metrics = Metrics()
         opts = {}
-        opts['dataset'] = 'mnist'
-        opts['input_normalize_sym'] = False
+        opts['dataset'] = dataset
+        opts['input_normalize_sym'] = normalyze
         opts['work_dir'] = output_dir
         metrics.make_plots(opts, 0, None, res, prefix='origin%d' % id1, max_rows=1)
 
