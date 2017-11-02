@@ -28,11 +28,10 @@ flags.DEFINE_float("learning_rate", 0.003,
 flags.DEFINE_float("adam_beta1", 0.5, "Beta1 parameter for Adam optimizer [0.5]")
 flags.DEFINE_integer("zdim", 8, "Dimensionality of the latent space [100]")
 flags.DEFINE_float("init_std", 0.0099999, "Initial variance for weights [0.02]")
-flags.DEFINE_string("workdir", 'results_mnist_pot', "Working directory ['results']")
+flags.DEFINE_string("workdir", 'results_mnist', "Working directory ['results']")
 flags.DEFINE_bool("unrolled", False, "Use unrolled GAN training [True]")
 flags.DEFINE_bool("vae", False, "Use VAE instead of GAN")
-flags.DEFINE_bool("pot", True, "Use POT instead of GAN")
-flags.DEFINE_float("pot_lambda", 10., "POT regularization")
+flags.DEFINE_bool("pot", False, "Use POT instead of GAN")
 flags.DEFINE_bool("is_bagging", False, "Do we want to use bagging instead of adagan? [False]")
 FLAGS = flags.FLAGS
 
@@ -62,7 +61,7 @@ def main():
     opts['gmm_modes_num'] = 5
 
     # AdaGAN parameters
-    opts['adagan_steps_total'] = 1
+    opts['adagan_steps_total'] = 10
     opts['samples_per_component'] = 1000
     opts['is_bagging'] = FLAGS.is_bagging
     opts['beta_heur'] = 'uniform' # uniform, constant
