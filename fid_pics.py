@@ -265,36 +265,38 @@ def main():
                     np.save(os.path.join(output_dir, 'fake'), res)
 
 def save_pic(pic, path, exp):
-        height = pic.shape[0]
-        width = pic.shape[1]
-        fig = plt.figure(frameon=False, figsize=(width, height))#, dpi=1)
-        ax = plt.Axes(fig, [0., 0., 1., 1.])
-        ax.set_axis_off()
-        fig.add_axes(ax)
-        if exp.symmetrize:
-            pic = (pic + 1.) / 2.
-        if exp.dataset == 'mnist':
-            pic = pic[:, :, 0]
-            pic = 1. - pic
-        if exp.dataset == 'mnist':
-            ax.imshow(pic, cmap='Greys', interpolation='none')
-        else:
-            ax.imshow(pic, interpolation='none')
-        fig.savefig(path, dpi=1, format='png')
-        plt.close()
-        # if exp.dataset == 'mnist':
-        #     pic = pic[:, :, 0]
-        #     pic = 1. - pic
-        #     ax = plt.imshow(pic, cmap='Greys', interpolation='none')
-        # else:
-        #     ax = plt.imshow(pic, interpolation='none')
-        # ax.axes.get_xaxis().set_ticks([])
-        # ax.axes.get_yaxis().set_ticks([])
-        # ax.axes.set_xlim([0, width])
-        # ax.axes.set_ylim([height, 0])
-        # ax.axes.set_aspect(1)
-        # fig.savefig(path, format='png')
-        # plt.close()
+    if len(pic.shape) == 4:
+        pic = pic[0]
+    height = pic.shape[0]
+    width = pic.shape[1]
+    fig = plt.figure(frameon=False, figsize=(width, height))#, dpi=1)
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    ax.set_axis_off()
+    fig.add_axes(ax)
+    if exp.symmetrize:
+        pic = (pic + 1.) / 2.
+    if exp.dataset == 'mnist':
+        pic = pic[:, :, 0]
+        pic = 1. - pic
+    if exp.dataset == 'mnist':
+        ax.imshow(pic, cmap='Greys', interpolation='none')
+    else:
+        ax.imshow(pic, interpolation='none')
+    fig.savefig(path, dpi=1, format='png')
+    plt.close()
+    # if exp.dataset == 'mnist':
+    #     pic = pic[:, :, 0]
+    #     pic = 1. - pic
+    #     ax = plt.imshow(pic, cmap='Greys', interpolation='none')
+    # else:
+    #     ax = plt.imshow(pic, interpolation='none')
+    # ax.axes.get_xaxis().set_ticks([])
+    # ax.axes.get_yaxis().set_ticks([])
+    # ax.axes.set_xlim([0, width])
+    # ax.axes.set_ylim([height, 0])
+    # ax.axes.set_aspect(1)
+    # fig.savefig(path, format='png')
+    # plt.close()
 
 def create_dir(d):
     if not tf.gfile.IsDirectory(d):
