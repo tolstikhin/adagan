@@ -32,7 +32,7 @@ class Metrics(object):
         self.Qz = None
 
     def make_plots(self, opts, step, real_points,
-                   fake_points, weights=None, prefix='', max_rows=16, name_force=None):
+                   fake_points, weights=None, prefix='', max_rows=16, name_force=None, for_paper=False):
         """Save plots of samples from the current model to the file.
         Args:
             step: integer, identifying the step number (of AdaGAN or anything)
@@ -66,7 +66,7 @@ class Metrics(object):
                 logging.debug('Can not plot, sorry...')
         elif opts['dataset'] in pic_datasets:
             self._make_plots_pics(opts, step, real_points,
-                                  fake_points, weights, prefix, max_rows, name_force)
+                                  fake_points, weights, prefix, max_rows, name_force, for_paper)
         else:
             logging.debug('Can not plot, sorry...')
 
@@ -476,7 +476,7 @@ class Metrics(object):
 
     def _make_plots_pics(self, opts, step, real_points,
                          fake_points, weights=None, prefix='', max_rows=16,
-                         name_force=None):
+                         name_force=None, for_paper=False):
         pics = []
         if opts['dataset'] in ('mnist', 'zalando', 'mnist3', 'guitars', 'cifar10', 'celebA'):
             if opts['input_normalize_sym']:
@@ -529,7 +529,11 @@ class Metrics(object):
         width = 3 * width_pic / float(dpi)
 
         if self.l2s is None:
-            fig = plt.figure(figsize=(width, height))#, dpi=1)
+            fig = plt.figure(frameon=False, figsize=(width, height))#, dpi=1)
+            if for_paper:
+                ax = plt.Axes(fig, [0., 0., 1., 1.])
+                ax.set_axis_off()
+                fig.add_axes(ax)
         elif self.Qz is None:
             fig = plt.figure(figsize=(width, height + height / 2))#, dpi=1)
             gs = matplotlib.gridspec.GridSpec(2, 1, height_ratios=[2, 1])
@@ -540,20 +544,27 @@ class Metrics(object):
             plt.subplot(gs[0, :])
 
         # Showing the image
-        if fake_points[0].shape[-1] == 1:
-            image = image[:, :, 0]
-            ax = plt.imshow(image, cmap='Greys', interpolation='none')
-        elif opts['dataset'] == 'mnist3':
-            ax = plt.imshow(image, cmap='Greys', interpolation='none')
-        else:
-            ax = plt.imshow(image, interpolation='none')
+        if not for_paper:
+            if fake_points[0].shape[-1] == 1:
+                image = image[:, :, 0]
+                ax = plt.imshow(image, cmap='Greys', interpolation='none')
+            elif opts['dataset'] == 'mnist3':
+                ax = plt.imshow(image, cmap='Greys', interpolation='none')
+            else:
+                ax = plt.imshow(image, interpolation='none')
 
-        # Removing ticks
-        ax.axes.get_xaxis().set_ticks([])
-        ax.axes.get_yaxis().set_ticks([])
-        ax.axes.set_xlim([0, width_pic])
-        ax.axes.set_ylim([height_pic, 0])
-        ax.axes.set_aspect(1)
+            # Removing ticks
+            ax.axes.get_xaxis().set_ticks([])
+            ax.axes.get_yaxis().set_ticks([])
+            ax.axes.set_xlim([0, width_pic])
+            ax.axes.set_ylim([height_pic, 0])
+            ax.axes.set_aspect(1)
+        else:
+            if fake_points[0].shape[-1] == 1:
+                image = image[:, :, 0]
+                ax.imshow(image, cmap='Greys', interpolation='none')
+            else:
+                ax.imshow(image, interpolation='none')
 
         # Plotting auxiliary stuff
         if self.l2s is not None:

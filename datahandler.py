@@ -75,6 +75,7 @@ class Data(object):
         self.loaded = None
         if isinstance(X, np.ndarray):
             self.X = X
+            self.shape = X.shape
         else:
             assert isinstance(data_dir, str), 'Data directory not provided'
             assert paths is not None and len(paths) > 0, 'No paths provided for the data'
@@ -84,6 +85,7 @@ class Data(object):
             self.loaded = [] if loaded is None else loaded
             self.crop_style = opts['celebA_crop']
             self.dataset_name = opts['dataset']
+            self.shape = (len(self.paths), None, None, None)
 
     def __len__(self):
         if isinstance(self.X, np.ndarray):

@@ -782,10 +782,8 @@ class ImagePot(Pot):
             res1 += tf.exp( - distances_pz / 2. / sigma2_k)
             res1 = tf.multiply(res1, 1. - tf.eye(n))
             res1 = tf.reduce_sum(res1) / (nf * nf - nf)
-            res1 = tf.Print(res1, [res1], 'First two terms:')
             res2 = tf.exp( - distances / 2. / sigma2_k)
             res2 = tf.reduce_sum(res2) * 2. / (nf * nf)
-            res2 = tf.Print(res2, [res2], 'Negative term:')
             stat = res1 - res2
             # stat = tf.reduce_sum(res) / (nf * nf)
         elif kernel == 'IM':
