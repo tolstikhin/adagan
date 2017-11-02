@@ -108,7 +108,6 @@ def main():
     # --POT specific
     opts['pot'] = FLAGS.pot
     opts['pot_pz_std'] = 2.
-    opts['pot_lambda'] = FLAGS.pot_lambda
     opts['adv_c_loss'] = 'none'
     opts['vgg_layer'] = 'pool2'
     opts['adv_c_patches_size'] = 5
