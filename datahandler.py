@@ -53,6 +53,35 @@ def load_cifar_batch(fpath, label_key='labels'):
     data = data.reshape(data.shape[0], 3, 32, 32)
     return data, labels
 
+def transform_mnist(pic, mode='n'):
+    """Take an MNIST picture normalized into [0, 1] and transform
+        it according to the mode:
+        n   -   noise
+        i   -   colour invert
+        s*  -   shift
+    """
+    pic = np.copy(pic)
+    if mode == 'n':
+        noise = np.random.randn(28, 28, 1)
+        return np.clip(pic + 0.25 * noise, 0, 1)
+    elif mode == 'i':
+        return 1. - pic
+    pixels = 3 + np.random.randint(5)
+    if mode == 'sl':
+        pic[:, :-pixels] = pic[:, pixels:] + 0.0
+        pic[:, -pixels:] = 0.
+    elif mode == 'sr':
+        pic[:, pixels:] = pic[:, :-pixels] + 0.0
+        pic[:, :pixels] = 0.
+    elif mode == 'sd':
+        pic[pixels:, :] = pic[:-pixels, :] + 0.0
+        pic[:pixels, :] = 0.
+    elif mode == 'su':
+        pic[:-pixels, :] = pic[pixels:, :] + 0.0
+        pic[-pixels:, :] = 0.
+    return pic
+
+
 class Data(object):
     """
     If the dataset can be quickly loaded to memory self.X will contain np.ndarray
@@ -191,6 +220,8 @@ class DataHandler(object):
         """
         if opts['dataset'] == 'mnist':
             self._load_mnist(opts)
+        elif opts['dataset'] == 'mnist_mod':
+            self._load_mnist(opts, modified=True)
         elif opts['dataset'] == 'zalando':
             self._load_mnist(opts, zalando=True)
         elif opts['dataset'] == 'mnist3':
@@ -323,14 +354,16 @@ class DataHandler(object):
 
         logging.debug('Loading Done.')
 
-    def _load_mnist(self, opts, zalando=False):
+    def _load_mnist(self, opts, zalando=False, modified=False):
         """Load data from MNIST or ZALANDO files.
 
         """
-        if not zalando:
-            logging.debug('Loading MNIST')
+        if zalando:
+            logging.debug('Loading Fashion MNIST')
+        elif modified:
+            logging.debug('Loading modified MNIST')
         else:
-            logging.debug('Loading ZALANDO')
+            logging.debug('Loading MNIST')
         data_dir = _data_dir(opts)
         # pylint: disable=invalid-name
         # Let us use all the bad variable names!
@@ -370,13 +403,28 @@ class DataHandler(object):
         np.random.seed()
 
         self.data_shape = (28, 28, 1)
-        self.data = Data(opts, X)
-        self.labels = y
+        test_size = 10000
 
-        self.data = Data(opts, X[:-1000])
-        self.test_data = Data(opts, X[-1000:])
-        self.labels = y[:-1000]
-        self.test_labels = y[-1000:]
+        if modified:
+            self.original_mnist = X
+            n = opts['toy_dataset_size']
+            n += test_size
+            points = []
+            labels = []
+            for _ in xrange(n):
+                idx = np.random.randint(len(X))
+                point = X[idx]
+                modes = ['n', 'i', 'sl', 'sr', 'su', 'sd']
+                mode = modes[np.random.randint(len(modes))]
+                point = transform_mnist(point, mode)
+                points.append(point)
+                labels.append(y[idx])
+            X = np.array(points)
+            y = np.array(y)
+        self.data = Data(opts, X[:-test_size])
+        self.test_data = Data(opts, X[-test_size:])
+        self.labels = y[:-test_size]
+        self.test_labels = y[-test_size:]
         self.num_points = len(self.data)
 
         logging.debug('Loading Done.')

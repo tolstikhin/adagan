@@ -21,7 +21,6 @@ from tqdm import tqdm
 
 def generate_noise(opts, num=100):
     """Generate latent noise.
-
     """
     noise = None
     if opts['latent_space_distr'] == 'uniform':
@@ -32,6 +31,8 @@ def generate_noise(opts, num=100):
         cov = np.identity(opts["latent_space_dim"])
         noise = np.random.multivariate_normal(
             mean, cov, num).astype(np.float32)
+    elif opts['latent_space_distr'] == 'mnist':
+        noise = np.random.rand(1, opts['latent_space_dim'])
     return noise
 
 class ArraySaver(object):
