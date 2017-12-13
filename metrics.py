@@ -591,8 +591,12 @@ class Metrics(object):
                 # plt.scatter(self.Qz[:,0], self.Qz[:,1], s=20,
                 #             edgecolors='face', c=self.Qz_labels)
                 plt.scatter(self.Pz[:,0], self.Pz[:,1], color='red', s=200, marker='*', label='Pz')
-                plt.scatter(self.Qz[:,0], self.Qz[:,1], s=40, marker='x',
-                            edgecolors='face', c=self.Qz_labels, label='Qz')
+                if self.Qz_labels != None:
+                    plt.scatter(self.Qz[:,0], self.Qz[:,1], s=40, marker='x',
+                                edgecolors='face', c=self.Qz_labels, label='Qz')
+                else:
+                    plt.scatter(self.Qz[:,0], self.Qz[:,1], s=40, marker='x',
+                                edgecolors='face', label='Qz')
                 xmin = np.min(self.Qz[:,0])
                 xmax = np.max(self.Qz[:,0])
                 magnify = 0.3

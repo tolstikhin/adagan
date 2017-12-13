@@ -1850,7 +1850,10 @@ class ImagePot(Pot):
                     metrics.Qz = np.dot(sample_Qz, proj_mat)
                     # metrics.Pz = np.dot(self._noise_for_plots, proj_mat)
                     metrics.Pz = np.dot(sample_pz, proj_mat)
-                    metrics.Qz_labels = self._data.labels[:Qz_num]
+                    if self._data.labels != None:
+                        metrics.Qz_labels = self._data.labels[:Qz_num]
+                    else:
+                        metrics.Qz_labels = None
                     metrics.l2s = losses[:]
                     metrics.losses_match = [opts['pot_lambda'] * el for el in losses_match]
                     metrics.losses_rec = [opts['reconstr_w'] * el for el in losses_rec]
