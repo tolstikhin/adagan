@@ -31,7 +31,8 @@ flags.DEFINE_float("init_std", 0.0099999, "Initial variance for weights [0.02]")
 flags.DEFINE_string("workdir", 'results_mnist', "Working directory ['results']")
 flags.DEFINE_bool("unrolled", False, "Use unrolled GAN training [True]")
 flags.DEFINE_bool("vae", False, "Use VAE instead of GAN")
-flags.DEFINE_bool("pot", False, "Use POT instead of GAN")
+flags.DEFINE_bool("pot", True, "Use POT instead of GAN")
+flags.DEFINE_float("pot_lambda", 10., "POT regularization")
 flags.DEFINE_bool("is_bagging", False, "Do we want to use bagging instead of adagan? [False]")
 FLAGS = flags.FLAGS
 
@@ -108,6 +109,7 @@ def main():
     # --POT specific
     opts['pot'] = FLAGS.pot
     opts['pot_pz_std'] = 2.
+    opts['pot_lambda'] = FLAGS.pot_lambda
     opts['adv_c_loss'] = 'none'
     opts['vgg_layer'] = 'pool2'
     opts['adv_c_patches_size'] = 5

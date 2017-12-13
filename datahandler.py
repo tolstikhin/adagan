@@ -220,6 +220,8 @@ class DataHandler(object):
         """
         if opts['dataset'] == 'mnist':
             self._load_mnist(opts)
+        elif opts['dataset'] == 'dsprites':
+            self._load_dsprites(opts)
         elif opts['dataset'] == 'mnist_mod':
             self._load_mnist(opts, modified=True)
         elif opts['dataset'] == 'zalando':
@@ -240,6 +242,7 @@ class DataHandler(object):
             raise ValueError('Unknown %s' % opts['dataset'])
 
         sym_applicable = ['mnist',
+                          'dsprites',
                           'mnist3',
                           'guitars',
                           'cifar10',
@@ -351,6 +354,37 @@ class DataHandler(object):
         self.data_shape = (128, 128, 3)
         self.data = Data(opts, X/255.)
         self.num_points = len(X)
+
+        logging.debug('Loading Done.')
+
+    def _load_dsprites(self, opts):
+        """Load data from dsprites dataset
+
+        """
+        logging.debug('Loading dsprites')
+        data_dir = _data_dir(opts)
+        # pylint: disable=invalid-name
+        # Let us use all the bad variable names!
+        tr_X = None
+        tr_Y = None
+        te_X = None
+        te_Y = None
+
+        data_file = os.path.join(data_dir, 'dsprites.npz')
+        X = np.load(data_file)['imgs']
+        X = X[:, :, :, None]
+
+        seed = 123
+        np.random.seed(seed)
+        np.random.shuffle(X)
+        np.random.seed()
+
+        self.data_shape = (64, 64, 1)
+        test_size = 10000
+
+        self.data = Data(opts, X[:-test_size])
+        self.test_data = Data(opts, X[-test_size:])
+        self.num_points = len(self.data)
 
         logging.debug('Loading Done.')
 

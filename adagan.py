@@ -41,6 +41,7 @@ class AdaGan(object):
         self._saver = ArraySaver('disk', workdir=opts['work_dir'])
         # Which GAN architecture should we use?
         pic_datasets = ['mnist',
+                        'dsprites',
                         'mnist_mod',
                         'zalando',
                         'mnist3',

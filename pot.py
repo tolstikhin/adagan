@@ -1788,7 +1788,7 @@ class ImagePot(Pot):
                 rec_test = None
                 if opts['verbose'] and counter % 500 == 0:
                     # Printing (training and test) loss values
-                    test = self._data.test_data[:]
+                    test = self._data.test_data[:200]
                     [loss_rec_test, rec_test, g_mom_stats, loss_z_corr, additional_losses] = self._session.run(
                         [self._loss_reconstruct, self._reconstruct_x, self._g_mom_stats, self._loss_z_corr,
                          self._additional_losses],
